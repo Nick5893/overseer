@@ -105,6 +105,14 @@ class ProjectTests(RepoFixture):
         (private / "config.toml").write_text('model = "spark-model"\n[projects.example]\ntrust_level = "trusted"\n')
         self.assertEqual((original / "config.toml").read_bytes(), content)
 
+    def test_legacy_jobs_cannot_be_reinterpreted_as_pi_or_change_models(self):
+        settings = {"default_worker": "pi-local", "health_url": "", "workers": {"codex-local": {"harness": "pi"}}}
+        with patch.object(sw, "SETTINGS", settings):
+            self.assertEqual(sw.legacy_worker({})["harness"], "codex")
+            self.assertEqual(sw.legacy_worker({})["health_url"], "")
+            with self.assertRaisesRegex(sw.Error, "configuration changed"):
+                sw.legacy_worker({"model": "different-model", "provider": "spark"})
+
     def test_operator_full_access_requires_explicit_launcher_flag(self):
         self.enable()
         args = SimpleNamespace(project=str(self.root), prompt="implement the task", prompt_file=None, full_access=False)

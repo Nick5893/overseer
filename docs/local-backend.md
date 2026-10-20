@@ -1,6 +1,33 @@
 # Connecting a local model
 
-## What the endpoint must support
+## Choose the worker protocol
+
+Pi can connect directly to a Chat Completions endpoint. Codex requires Responses.
+Both need working tool calling, result continuation, and the context size you
+advertise. A health endpoint alone does not prove compatibility.
+
+### Pi: direct compatible provider
+
+Copy [the Pi model example](../examples/pi-models.json) into a private location,
+then change its URL, model ID, and context limit to match your backend:
+
+```sh
+foundry configure --worker pi-local --harness pi \
+  --models /absolute/path/to/models.json --provider local --model local-worker
+```
+
+The example dummy key is for a local server that ignores authentication. For an
+authenticated endpoint, prefer `"apiKey": "$LOCAL_MODEL_API_KEY"` in your private
+file and provide that environment variable when starting the bridge. Only the
+selected custom provider and model are copied into private job state; Pi login
+credentials and extensions are not imported. Credential commands in model config
+remain executable code and should be trusted. See the official
+[Pi model configuration](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/models.md).
+
+Pi workers require explicit full-access project permissions. They use the direct
+provider protocol and do not require `foundry-adapter` or `foundry-catalog`.
+
+## What the Codex endpoint must support
 
 The worker harness speaks the Responses API over HTTP/SSE. The local serving
 stack must support the chosen model's tool calling and parser, streamed function

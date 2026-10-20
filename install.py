@@ -11,7 +11,7 @@ SOURCE = Path(__file__).resolve().parent
 def install(prefix, *, force=False):
     destination = prefix / "share/frontier-foundry"
     binaries = prefix / "bin"
-    files = ["spark_workers.py", "spark_proxy.py", "make_model_catalog.py",
+    files = ["spark_workers.py", "worker_harnesses.py", "spark_proxy.py", "make_model_catalog.py",
              "templates/SKILL.md", "templates/agents/openai.yaml"]
     links = {"foundry": "spark_workers.py", "spark-workers": "spark_workers.py",
              "foundry-adapter": "spark_proxy.py", "foundry-catalog": "make_model_catalog.py"}

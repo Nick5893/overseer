@@ -4,6 +4,11 @@
 | --- | --- |
 | `foundry` is not found | Put the install prefix's `bin` directory on PATH. |
 | Installer refuses a command link | Use a separate prefix for a preview, or `--force` only to intentionally replace that link. The installer prechecks all links before copying. |
+| Unknown worker | Register it with `configure --worker NAME`, then select it with `enable --worker NAME` or `submit --worker NAME`. |
+| Pi workspace sandbox error | Pi requires explicit `enable --sandbox danger-full-access`; choose Codex if you require its workspace sandbox. |
+| Pi fails before inference | Check `api`, `baseUrl`, provider, and model ID in the custom models file; the returned identity must match. |
+| Pi authentication missing | Its private home does not import interactive login credentials. Use an environment key reference in the selected provider config. |
+| Follow-up keeps an old model | Expected: jobs freeze configuration and permissions. Submit a new job to use a changed worker. |
 | Missing worker profile | Run `foundry configure --profile /absolute/path/to/profile.config.toml`. |
 | Project is not enabled | Run `foundry enable` in that Git project, then open a fresh Codex session to discover `$spark-workers`. |
 | No initial commit | Commit the project's initial files before submitting a worker task. |
@@ -22,6 +27,6 @@
 | `$spark-workers` is absent from normal prompt metadata | Expected: implicit invocation is disabled. It should be available in the skill selector in enabled projects. |
 
 Use `foundry result JOB_ID --project /path/to/project` to find `report.txt`,
-`events.jsonl`, `app-server.log`, and the private worktree. Review the terminal
+`events.jsonl`, `progress.jsonl`, `app-server.log`, and the private worktree. Review the terminal
 status as well as the report: completed model output is not proof that tests
 passed or that every acceptance criterion was met.

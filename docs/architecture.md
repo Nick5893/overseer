@@ -4,9 +4,11 @@
 
 The operator is your normal frontier-model Codex session. It sees your prompt,
 plans work, submits assignments through a shell tool, and decides what to accept.
-The local worker is a separate Codex app-server process using the custom model
-provider in your worker profile. Both use the Codex harness; the selected model
-provider differs. The bridge is a Python supervisor and CLI, not another model.
+The local worker is a separate Codex app-server or Pi RPC process using a
+configured local-model provider. The bridge is a Python supervisor and CLI.
+`worker_harnesses.py` contains the two protocol adapters; the shared supervisor
+owns jobs, inference locking, worktrees, cancellation deadlines, and application.
+No MCP server or SDK is needed between the operator and bridge.
 
 The supported topology is a shared Linux filesystem for operator, bridge, Git
 checkout, and worker tools. Inference can be local or accessible through a
@@ -21,19 +23,23 @@ multi-host worker scheduling, or a remote execution cluster.
    changing the user's index or committing onto their branch.
 2. A detached worktree is created from that snapshot. The bridge saves task state
    and launches a detached supervisor, so the operator's shell can return.
-3. The supervisor waits for the bridge-wide inference lock, then starts a
-   dedicated Codex app-server over stdio. It flattens the selected TOML profile
-   into per-process config overrides. No interactive Spark client is required.
-4. It initializes the JSONL protocol and creates or resumes a worker thread with
-   native delegation, apps, plugins, skill-list injection, and web search disabled.
-   It checks the returned model/provider before starting inference; a mismatch
-   fails instead of switching to the operator's provider.
-5. `turn/start` sends the assignment. The harness calls the local Responses model,
-   executes its tools under the project's chosen worker permission mode, and
-   sends the tool outputs back to the local model.
-6. The bridge logs received protocol events. Completed agent messages are
-   collected in `report.txt`. `turn/completed` sets the task to completed, failed,
-   or cancelled with any returned error.
+3. At submission, the bridge freezes the selected worker configuration and
+   execution mode. Codex profiles and the selected Pi provider/model definition
+   are copied into private task state. Binary paths are saved, but binary contents,
+   referenced catalogs, credential helpers, and environment values are not locked.
+4. The supervisor waits for the bridge-wide inference lock and starts a dedicated
+   harness over stdio. Codex uses `initialize` and `thread/start` or `thread/resume`;
+   Pi uses `get_state` with a persistent session file. Both verify model identity
+   before submitting the assignment. Pi also checks its API and endpoint.
+5. The harness calls the model and executes read/edit/test tools. Codex uses the
+   saved sandbox mode. Pi requires explicit `danger-full-access`; it has no
+   equivalent workspace sandbox and is rejected otherwise.
+6. Raw received records are saved to `events.jsonl`. Adapter events become common
+   `report`, `tool`, and `finished` records in `progress.jsonl`, tagged with harness,
+   attempt, and timestamp. Reports go to `report.txt`. Codex completes on the
+   matching `turn/completed`; Pi completes on `agent_settled`, checking the final
+   assistant stop reason. Pi's `agent_end` alone is insufficient because retries
+   or compaction may continue afterward.
 7. The operator uses `wait`/`status`, then `result` and `diff`. These command outputs
    are ordinary tool results that enter the operator's conversation. The worker
    does not share memory with the operator or push an automatic native subagent
@@ -62,18 +68,36 @@ PROJECT_HASH/
     task.json             Assignment, status, model, IDs, timestamps, mode
     report.txt            Agent messages from the latest attempt
     report-attempt-N.txt  Earlier attempt's report
-    events.jsonl          Received app-server responses and notifications
+    worker.config.toml    Frozen Codex worker profile (Codex jobs)
+    pi-home/models.json   Selected provider/model in a private Pi home (Pi jobs)
+    sessions/             Persistent Pi conversation (Pi jobs)
+    progress.jsonl        Common report/tool/finished records across attempts
+    events.jsonl          Raw received harness records across attempts
     app-server.log        Worker harness stderr
     supervisor.log        Supervisor diagnostics
     workspace/            Detached Git worktree
 ```
 
-Each worker harness gets a genuine private `CODEX_HOME` in its child environment.
-It starts from a copy of the operator's user configuration, while user
+Each Codex worker harness gets a genuine private `CODEX_HOME` in its child
+environment. It starts from a copy of the operator's user configuration, while user
 instructions, rules, and requirements remain available. Codex's automatic project
 trust records and history are written to that private home. The worker profile
 overrides model selection in that process. This leaves the normal operator's
 saved defaults and original configuration untouched by the worker harness.
+
+Pi receives a private `PI_CODING_AGENT_DIR` per job. Only its selected provider
+and model are copied from `models.json`; interactive `auth.json` is not copied.
+Extensions, MCP, automatic skills/templates/context files, themes, project resource
+approval, and startup network checks are disabled. The worker instructions ask it
+to read applicable `AGENTS.md` files itself. Provider requests still use the network.
+Credentials may use environment references in the private model configuration.
+
+Version-2 jobs store `worker`, `harness`, `worker_config`, and an opaque
+`resume_ref`. Codex keeps the legacy `thread_id` field too. Legacy job records
+without harness metadata are treated as Codex jobs and frozen when resumed.
+Project marker version 1 and the historical single-worker settings remain valid.
+Follow-up uses saved job permissions even if the project default changes; cancel
+an existing job if its previously authorized execution mode should no longer run.
 
 The bridge uses a machine-wide file lock within its state directory for one
 active worker inference turn across projects. This does not throttle unrelated
@@ -83,11 +107,12 @@ a parallel GPU scheduler, and queue order is not guaranteed to be FIFO.
 ## Cancellation and recovery
 
 - `cancel` creates a cancellation marker. A queued supervisor exits before
-  inference; an active one requests `turn/interrupt`. Files and logs are retained.
+  inference; an active one requests Codex `turn/interrupt` or Pi `clear_queue` and
+  `abort`. Files and logs are retained.
 - The turn time limit triggers interruption and records failure. The supervisor
   closes its dedicated harness after the turn or an unrecoverable error.
 - Interactive approvals or questions cannot be answered by an unattended worker;
-  the bridge returns an error so the model can report the blocker.
+  Codex receives an error response, while unexpected Pi extension UI fails the job.
 - If a supervisor dies, status compares its PID and Linux process start time and
   marks the task orphaned. It does not automatically restart it. Use `followup`
   to resume the saved thread/worktree after inspecting the cause.

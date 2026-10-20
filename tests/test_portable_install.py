@@ -152,10 +152,12 @@ for line in sys.stdin:
             self.assertEqual(result["model"], "tiny-local-model")
             self.assertEqual(result["provider"], "local_worker")
             self.assertFalse((project / "implementation.txt").exists())
+            profile.write_text('model = "changed-after-submit"\n')
             cli("followup", task_id, "Apply this follow-up correction")
             task = cli("wait", task_id, "--seconds", "10")
             self.assertEqual(task["status"], "completed", task)
             self.assertEqual(task["thread_id"], first_thread)
+            self.assertEqual(task["model"], "tiny-local-model")
             diff = subprocess.run([str(binary), "diff", task_id], cwd=project, env=env,
                                   capture_output=True, text=True, check=True)
             self.assertIn("+revised", diff.stdout)

@@ -1,0 +1,20 @@
+{
+  "providers": {
+    "local": {
+      "baseUrl": "http://127.0.0.1:18888/v1",
+      "api": "openai-completions",
+      "apiKey": "unused-local-key",
+      "models": [
+        {
+          "id": "local-worker",
+          "name": "Local coding worker",
+          "reasoning": false,
+          "input": ["text"],
+          "contextWindow": 32768,
+          "maxTokens": 4096,
+          "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0}
+        }
+      ]
+    }
+  }
+}
