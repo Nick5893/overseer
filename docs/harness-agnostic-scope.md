@@ -1,6 +1,7 @@
 # Adding another harness
 
-The first two adapters are Codex app-server and Pi RPC. Their implementation is
+The adapters cover Codex app-server, Pi RPC, OMP RPC, OpenCode, and Claude Code.
+Their implementation is
 in `worker_harnesses.py`. The worker side is adaptable; the shipped operator
 integration is still the explicit Codex project skill.
 
@@ -14,10 +15,12 @@ Each adapter implements:
 | `prompt()` | Submit an assignment; return native turn metadata when applicable |
 | `event(record)` | Convert relevant native records to report, tool, or finished events |
 | `interrupt()` | Request cancellation without waiting synchronously for completion |
+| `finish()` (headless streams) | Check native process exit and final result after stdout closes |
 
 `Rpc` in `spark_workers.py` supplies continuous LF-delimited JSON reading,
 request IDs, correlated replies, buffered interleaved events, raw event logging,
-and child shutdown. Its two wire dialects are deliberately small. A harness with
+and child shutdown. RPC command dialects and finite native JSON streams remain
+small. A harness with
 a different transport should get a small dedicated client rather than forcing
 all protocols into JSON-RPC.
 

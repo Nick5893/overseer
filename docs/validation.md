@@ -1,6 +1,7 @@
 # Validation
 
-Checked on 2026-10-20 on Linux ARM64, using Codex 0.163.0, Pi 1.1.0, and the
+Checked on 2026-10-20 on Linux ARM64, using Codex 0.163.0, Pi 1.1.0, OMP 18.12.4, OpenCode 2.0.16, Claude Code
+2.1.304, and the
 configured local Qwen server under its served alias `spark-model`.
 
 ## Automated suite
@@ -10,7 +11,7 @@ python3 -m unittest discover -s tests -v
 ```
 
 ```text
-Ran 42 tests
+Ran 51 tests
 OK
 ```
 
@@ -21,6 +22,9 @@ They need no GPU, model weights, network connection, or provider credentials.
 | --- | --- |
 | Installed Codex path | Clean prefix with spaces, generated profile, edit, report, same-thread follow-up, diff, apply |
 | Installed Pi path | Clean prefix with spaces, edit, same-session follow-up, report, tool output, apply |
+| Additional installed harnesses | OMP, OpenCode, and Claude edit/resume/apply; native error and exit checks, cancellation and timeout |
+| CLI setup | Wizard flow, credential environment isolation, all-harness discovery, side-by-side install preserving old Spark command |
+| Working directory | Deliberately stale operator `PWD` replaced with actual worktree directory for every child |
 | Configuration | Register both harnesses, retain Codex default, preserve Pi registration; freeze job settings across source/config changes |
 | Permissions | Reject Pi in workspace-write before creating a worktree; no automatic full-access fallback |
 | Identity | Reject Codex provider mismatch and Pi model/provider/API/endpoint mismatches before prompting |
@@ -38,17 +42,20 @@ git diff --check
 
 ## Live model checks
 
-Both harness paths were driven from the frontier operator through the bridge.
+The harness paths below were driven from the frontier operator through the bridge.
 These checks used actual local inference and file tools, not mocked model output.
 
 | Worker | Initial task | Follow-up and integration |
 | --- | --- | --- |
 | Pi + local Qwen | Implement `clamp`; 5 tests passed | Same persistent session; invalid-bounds correction; 7 tests passed after reviewed apply |
 | Codex + local Qwen | Implement `clamp`; 5 tests passed | Same thread; invalid-bounds correction; 8 tests passed after apply |
+| OMP + local Qwen | Implement `clamp`; 5 tests passed | Same session; invalid-bounds tests; 11 tests passed after apply |
+| Claude Code + local Qwen | Implement `clamp`; 5 tests passed | Same session; invalid-bounds correction; 12 tests passed after apply |
+| OpenCode + local Qwen | Implement `clamp`; 5 tests passed | Same session; invalid-bounds correction; 7 tests passed after apply |
 
 The original project stayed unchanged until application. The worker's original
 test file and operator notes were preserved. The reusable smoke test passed for
-both harnesses, verifying that a nonempty staged index and a private operator
+the completed harness checks, verifying that a nonempty staged index and a private operator
 config remained unchanged. Pi was also checked in an earlier manual round-trip.
 Raw reports, tool events, snapshots, and test output were kept in private local
 evidence directories, rather than committed with machine-specific configuration.
@@ -57,6 +64,9 @@ The existing Codex profile encountered an incompatible `apply_patch` tool payloa
 the model recovered by editing through its command tool and completed the checks.
 This is a reminder to validate the specific model/profile/server combination;
 a passing bridge suite does not establish compatibility of every tool shape.
+
+A separate terminal-level test also drove `foundry setup` through a real PTY and
+verified its generated worker configuration. It did not enable a project.
 
 ## Repeat a live check
 
@@ -89,6 +99,12 @@ Evidence includes `initial-tests.txt`, `reviewed.diff`, `final-tests.txt`,
 worker state contains a copy of the selected provider configuration. Inspect the
 reports and raw tool output when diagnosing a failure. Test counts can vary when
 a model adds extra regression cases; independent acceptance checks still run.
+
+The same command supports `--harness omp`, `--harness opencode`, and
+`--harness claude`. Use `--base-url` and `--model` for these paths, plus
+`--api-key-env NAME` when needed. Claude requires a Messages endpoint, and
+`--auth-mode bearer` for bearer-auth servers. These are real CLI harnesses against
+the configured Qwen endpoint, not an Anthropic-supported non-Claude integration.
 
 ## Limits
 

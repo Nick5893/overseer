@@ -1,6 +1,6 @@
 interface:
   display_name: "Foundry Workers"
-  short_description: "Delegate explicit tasks to local Codex or Pi workers"
+  short_description: "Delegate explicit tasks to configured coding workers"
   default_prompt: "Use $spark-workers to plan this task, delegate implementation to the configured local worker, and review and verify the result."
 policy:
   allow_implicit_invocation: false

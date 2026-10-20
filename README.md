@@ -3,8 +3,9 @@
 **Frontier models plan and review. Local models write and test the code.**
 
 Frontier Foundry lets a Codex operator delegate implementation to a local model
-running in **Codex or Pi**, then bring its report and code changes back into the
-same operator session. Pick the harness that works with your model server.
+running in **Codex, Pi, OMP, OpenCode, or Claude Code**, then bring its report and
+code changes back into the same operator session. Pick the harness that works
+with your model server.
 
 A small Python CLI connects the processes over stdio. No MCP server, agent SDK,
 message broker, or extra daemon is required by the bridge.
@@ -13,12 +14,9 @@ message broker, or extra daemon is required by the bridge.
 flowchart LR
     U[Your prompt] --> O[Codex operator\nfrontier model]
     O -->|assignment| F[Foundry CLI]
-    F --> C[Codex worker]
-    F --> P[Pi worker]
-    C --> L[Local model server]
-    P --> L
-    C --> W[Isolated Git worktree\nread · edit · test]
-    P --> W
+    F --> H[Selected worker harness]
+    H --> L[Configured model endpoint]
+    H --> W[Isolated Git worktree · read / edit / test]
     W --> R[Report · events · diff]
     R -->|CLI tool results| O
     O -->|reviewed apply| G[Your project]
@@ -41,9 +39,13 @@ flowchart LR
 | Worker | Model API | Execution permissions |
 | --- | --- | --- |
 | Codex | Responses API with streaming and tool continuation | `workspace-write` by default; explicit full access available |
-| Pi | A custom provider supported by Pi, including OpenAI-compatible Chat Completions | Explicit `danger-full-access` required; no built-in workspace sandbox |
+| Pi | A custom provider supported by Pi, including OpenAI-compatible Chat Completions | Explicit full access |
+| OMP (Oh My Pi) | OpenAI-compatible Chat Completions through its custom provider configuration | Explicit full access |
+| OpenCode | OpenAI-compatible Chat Completions | Explicit full access |
+| Claude Code | Anthropic Messages API, directly or through a compatible gateway | Explicit full access |
 
-The tested baseline is **Codex 0.163.0 and Pi 1.1.0 on Linux ARM64**. Harness
+The tested baseline is **Codex 0.163.0, Pi 1.1.0, OMP 18.12.4, OpenCode 2.0.16,
+and Claude Code 2.1.304 on Linux ARM64**. Harness
 protocols change; rerun a small live task after upgrading. Foundry does not
 install model weights, serve models, or translate Chat Completions into Responses.
 
@@ -62,13 +64,59 @@ Repository access is required while this repo is private. Installation creates
 `foundry-adapter` and `foundry-catalog`. It leaves global Codex configuration,
 other projects, and shell startup files alone.
 
+To keep an existing `spark-workers` command, install with
+`python3 install.py --no-legacy-alias`. New project skills call `foundry`; the old
+Spark command can continue serving existing sessions.
+
 For a preview alongside another installation, use
 `python3 install.py --prefix /path/to/preview` and that prefix's `bin/foundry`.
 Conflicting commands are refused unless you explicitly pass `--force`.
 
+## Configure from the CLI
+
+```sh
+foundry setup             # Interactive: choose harness, endpoint, model, credentials
+foundry workers           # List workers and executable availability
+foundry configure --help  # Scriptable configuration options
+```
+
+`setup` registers a worker in Foundry's private configuration. It does not install
+a harness, enable a project, or change Codex defaults. Install the harness you
+choose separately, or pass its executable with `--binary PATH`. Credential prompts
+ask for an environment variable **name**, never a secret value.
+
+For a local Chat Completions server, the same short configuration works with
+Pi, OMP, or OpenCode:
+
+```sh
+foundry configure --harness opencode --worker code-local \
+  --base-url http://127.0.0.1:18888/v1 --model local-worker
+```
+
+Use `--harness pi` or `--harness omp` to choose another harness. For an authenticated
+endpoint, add `--api-key-env LOCAL_MODEL_API_KEY` and provide that variable in the
+shell that starts Foundry. For Pi/OMP/OpenCode, `--context-window` and
+`--max-tokens` default to 32768 and 4096; set them to limits your server supports.
+
+Claude Code requires an Anthropic-compatible Messages endpoint:
+
+```sh
+foundry configure --harness claude --worker claude-local \
+  --base-url http://127.0.0.1:18888 --model local-worker \
+  --api-key-env LOCAL_MODEL_API_KEY --auth-mode bearer
+```
+
+Use `--auth-mode api-key` (the default) for endpoints expecting Anthropic's API-key
+header. `claude-code` is also accepted as a harness name. Claude workers use bare
+headless mode, a private configuration directory, an explicit tool allowlist, and
+empty strict MCP configuration. They use the configured endpoint rather than
+importing your interactive subscription login. Non-Claude models through a gateway
+are [outside Anthropic's support](https://code.claude.com/docs/en/llm-gateway);
+validate the model/API combination with the live smoke test.
+
 ## Quick start
 
-### 1. Register a worker
+### 1. Register a worker (or use `foundry setup`)
 
 **Pi + a Chat Completions endpoint**
 
@@ -110,7 +158,8 @@ foundry enable --worker pi-local --sandbox danger-full-access
 foundry doctor
 ```
 
-Pi requires the explicit full-access selection. **A Git worktree isolates changes
+Pi, OMP, OpenCode, and Claude Code require the explicit full-access selection.
+This bridge does not provide Codex-equivalent workspace sandboxing for them. **A Git worktree isolates changes
 for review; it is not a security sandbox.** Full-access tools can read and write
 outside the worktree. Foundry never downgrades `workspace-write` to full access.
 
@@ -146,7 +195,8 @@ foundry submit --worker pi-local --name implement --prompt-file /tmp/task.md
 foundry submit --worker codex-local --name investigate --prompt-file /tmp/check.md
 ```
 
-The project must permit the selected worker's execution mode. Independent jobs
+You can use `--worker` with any registered harness, including OMP, OpenCode, and
+Claude Code. The project must permit the selected worker's execution mode. Independent jobs
 can queue together; submit dependent work after integrating its prerequisites.
 There is no automatic task router or parallel GPU scheduler.
 
@@ -233,7 +283,7 @@ python3 -m unittest discover -s tests -v
 python3 -m py_compile spark_workers.py worker_harnesses.py spark_proxy.py make_model_catalog.py install.py
 ```
 
-The automated suite needs no GPU, model weights, or API keys. It tests both
+The automated suite needs no GPU, model weights, or API keys. It tests all five
 installed worker paths, session resume, frozen configuration, permissions,
 provider checks, failure and cancellation behavior, Unicode JSONL, Git isolation,
 conflicts, and Codex tool translation. See [validation evidence](docs/validation.md)
@@ -243,6 +293,7 @@ for the live model smoke test and [contributing](CONTRIBUTING.md) for developmen
 
 - [Architecture and lifecycle](docs/architecture.md)
 - [Local backend setup](docs/local-backend.md)
+- [Harness support and compatibility](docs/harnesses.md)
 - [Adding another harness](docs/harness-agnostic-scope.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Codex app-server protocol](https://learn.chatgpt.com/docs/app-server)

@@ -1,4 +1,5 @@
-"""Two small protocol adapters. Queueing, permissions and Git stay in the bridge."""
+"""Small native protocol adapters. Queueing, permissions and Git stay in the bridge."""
+import signal
 
 
 class Error(RuntimeError):
@@ -109,3 +110,142 @@ class PiWorker:
             return {"type": "finished", "status": "completed" if good else "failed",
                     "error": None if good else message.get("errorMessage") or "Pi settled without a successful final response."}
         return None
+
+
+class OmpWorker(PiWorker):
+    """OMP shares Pi's commands but has its own correlated completion protocol."""
+    def prompt(self):
+        result = self.rpc.call("prompt", {"message": self.task["assignment"]})
+        self.prompt_id = self.rpc.last_request_id
+        self.outcome = None
+        if result.get("agentInvoked") is False:
+            raise Error("OMP handled the prompt without starting agent work.")
+        return {}
+
+    def interrupt(self):
+        self.rpc.send("abort")
+
+    def event(self, msg):
+        kind = msg.get("type")
+        if kind in {"host_tool_request", "host_uri_request", "rpc_frame_error"}:
+            raise Error(f"Unattended OMP worker cannot handle {kind}.")
+        if kind == "prompt_result" and msg.get("id") == self.prompt_id:
+            self.outcome = msg
+            if msg.get("sessionSettled"):
+                return self.finished()
+        if kind == "session_settled":
+            if self.outcome is None:
+                return None
+            return self.finished()
+        # OMP emits session_settled, never Pi's agent_settled.
+        if kind != "agent_settled":
+            return super().event(msg)
+        return None
+
+    def finished(self):
+        good = self.outcome.get("status") == "completed" and self.outcome.get("agentInvoked") is True
+        message = self.last_message or {}
+        if message.get("stopReason") in {"error", "aborted"}:
+            good = False
+        return {"type": "finished", "status": "completed" if good else "failed",
+                "error": None if good else self.outcome.get("error") or message.get("errorMessage") or "OMP prompt failed or was aborted."}
+
+
+class StreamWorker:
+    """One native headless process per attempt; completion also requires clean exit."""
+    def __init__(self, rpc, task):
+        self.rpc, self.task = rpc, task
+        self.spec = task["worker_config"]
+        self.session = task.get("resume_ref")
+        self.error = None
+
+    def start(self, instructions):
+        return {"model": self.spec["model"], "provider": self.spec["provider"]}
+
+    def prompt(self):
+        self.rpc.proc.stdin.write(self.task["assignment"])
+        self.rpc.proc.stdin.close()
+        return {}
+
+    def interrupt(self):
+        if self.rpc.proc.poll() is None:
+            self.rpc.proc.send_signal(signal.SIGINT)
+
+    def finish(self):
+        code = self.rpc.proc.wait(timeout=5)
+        good = code == 0 and not self.error and self.successful()
+        return {"type": "finished", "status": "completed" if good else "failed",
+                "error": None if good else self.error or f"Harness exited {code} without a successful final result."}
+
+
+class ClaudeWorker(StreamWorker):
+    def __init__(self, rpc, task):
+        super().__init__(rpc, task)
+        self.result = None
+        self.verified = False
+
+    def event(self, msg):
+        if msg.get("type") == "system" and msg.get("subtype") == "init":
+            expected = self.task.get("resume_ref") or self.spec["session_id"]
+            if msg.get("model") != self.spec["model"] or msg.get("session_id") != expected:
+                raise Error("Claude Code reported an unexpected model/session; refusing this result.")
+            self.session, self.verified = expected, True
+            return {"type": "identity", "resume_ref": expected}
+        if msg.get("type") == "result":
+            self.result = msg
+            if msg.get("is_error") or msg.get("subtype") != "success":
+                self.error = msg.get("errors") or msg.get("result") or "Claude Code reported failure."
+            return {"type": "report", "text": msg.get("result") or ""}
+        if msg.get("type") in {"assistant", "user"}:
+            blocks = msg.get("message", {}).get("content", [])
+            if isinstance(blocks, list):
+                tools = [block for block in blocks if block.get("type") in {"tool_use", "tool_result"}]
+                if tools:
+                    return {"type": "tool", "items": tools}
+        return None
+
+    def successful(self):
+        return self.verified and self.result and self.result.get("subtype") == "success"
+
+
+class OpenCodeWorker(StreamWorker):
+    def __init__(self, rpc, task):
+        super().__init__(rpc, task)
+        self.reason = None
+        self.reported = False
+
+    def event(self, msg):
+        session = msg.get("sessionID")
+        if session:
+            if self.session and session != self.session:
+                raise Error("OpenCode reported an unexpected session.")
+            self.session = session
+        kind, part = msg.get("type"), msg.get("part", {})
+        event = None
+        if kind == "step_start":
+            # A tool-calls finish belongs to the previous step. Some versions
+            # omit step_finish for the final text-only step before clean exit.
+            self.reason = None
+        elif kind == "error":
+            self.error = msg.get("error") or "OpenCode reported failure."
+        elif kind == "text":
+            self.reported = True
+            event = {"type": "report", "text": part.get("text", "")}
+        elif kind == "tool_use":
+            event = {"type": "tool", "item": part}
+        elif kind == "step_finish":
+            self.reason = part.get("reason")
+        if session:
+            event = event or {"type": "identity"}
+            event["resume_ref"] = session
+        return event
+
+    def successful(self):
+        # OpenCode 2.0.x can emit only reconciled text/tool records. Its clean
+        # process exit is the completion boundary; explicit failed finish reasons
+        # from versions that emit step_finish still take precedence.
+        return self.session and self.reported and self.reason in {None, "stop", "end_turn"}
+
+
+ADAPTERS = {"codex": CodexWorker, "pi": PiWorker, "omp": OmpWorker,
+            "claude": ClaudeWorker, "opencode": OpenCodeWorker}

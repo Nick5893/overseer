@@ -9,6 +9,10 @@
 | Pi fails before inference | Check `api`, `baseUrl`, provider, and model ID in the custom models file; the returned identity must match. |
 | Pi authentication missing | Its private home does not import interactive login credentials. Use an environment key reference in the selected provider config. |
 | Follow-up keeps an old model | Expected: jobs freeze configuration and permissions. Submit a new job to use a changed worker. |
+| No workers or a missing executable | Run `foundry setup`, then `foundry workers`; install the chosen harness separately or use `--binary PATH`. |
+| Claude repeats authentication errors | Check its Messages endpoint and `--api-key-env NAME`. For bearer-auth servers, use `--auth-mode bearer`. |
+| Claude reports an unsupported reasoning effort | The adapter uses `medium`; verify the endpoint accepts that effort and supports Anthropic request fields. |
+| OpenCode prints text but job fails | Inspect its error records and process exit; a report alone is insufficient. Check standalone mode and provider setup. |
 | Missing worker profile | Run `foundry configure --profile /absolute/path/to/profile.config.toml`. |
 | Project is not enabled | Run `foundry enable` in that Git project, then open a fresh Codex session to discover `$spark-workers`. |
 | No initial commit | Commit the project's initial files before submitting a worker task. |

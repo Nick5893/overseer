@@ -23,7 +23,7 @@ import urllib.request
 import urllib.parse
 import uuid
 
-from worker_harnesses import Error, CodexWorker, PiWorker
+from worker_harnesses import Error, CodexWorker, PiWorker, ADAPTERS
 
 APP = Path(__file__).resolve().parent
 CONFIG_FILE = Path(os.environ.get("SPARK_WORKERS_CONFIG", Path.home() / ".config/frontier-foundry/config.toml")).expanduser()
@@ -89,7 +89,7 @@ def select_worker(name=None, settings=None):
         spec.update(model=profile["model"], provider=provider,
                     base_url=profile["model_providers"][provider]["base_url"])
         spec.setdefault("binary", str(CODEX))
-    elif spec.get("harness") == "pi":
+    elif spec.get("harness") in {"pi", "omp"}:
         config = json.loads(Path(spec["models"]).expanduser().read_text())
         provider = config.get("providers", {}).get(spec["provider"], {})
         model = next((m for m in provider.get("models", []) if m.get("id") == spec["model"]), None)
@@ -100,15 +100,20 @@ def select_worker(name=None, settings=None):
         if not spec["api"] or not spec["base_url"]:
             raise Error("Pi's custom provider must specify api and baseUrl.")
         spec.setdefault("binary", shutil.which("pi") or "pi")
+    elif spec.get("harness") in {"claude", "opencode"}:
+        if not spec.get("model") or not spec.get("base_url"):
+            raise Error("This worker requires an explicit model and base_url.")
+        spec.setdefault("provider", "local" if spec["harness"] == "opencode" else "anthropic-compatible")
+        spec.setdefault("binary", spec["harness"])
     else:
-        raise Error("Supported worker harnesses are codex and pi.")
+        raise Error("Supported worker harnesses: " + ", ".join(ADAPTERS))
     spec["binary"] = str(Path(spec["binary"]).expanduser())
     return spec
 
 
 def check_policy(spec, sandbox):
-    if spec["harness"] == "pi" and sandbox != "danger-full-access":
-        raise Error("Pi has no built-in workspace sandbox. Explicitly enable --sandbox danger-full-access for this project to use Pi.")
+    if spec["harness"] != "codex" and sandbox != "danger-full-access":
+        raise Error(f"{spec['harness']} has no built-in workspace sandbox supported by this bridge. Explicitly enable --sandbox danger-full-access for this project.")
 
 
 def freeze_worker(selected, folder, sandbox):
@@ -119,14 +124,39 @@ def freeze_worker(selected, folder, sandbox):
         profile.write_bytes(Path(spec["profile"]).expanduser().read_bytes())
         profile.chmod(0o600)
         spec["profile"] = str(profile)
-    else:
+    elif spec["harness"] in {"pi", "omp"}:
         config = json.loads(Path(spec.pop("models")).expanduser().read_text())
         provider = dict(config["providers"][spec["provider"]])
         provider["models"] = [m for m in provider["models"] if m["id"] == spec["model"]]
         provider.pop("modelOverrides", None)
-        agent_dir = folder / "pi-home"
-        atomic_json(agent_dir / "models.json", {"providers": {spec["provider"]: provider}})
+        agent_dir = folder / (spec["harness"] + "-home")
+        filename = "models.yml" if spec["harness"] == "omp" else "models.json"
+        atomic_json(agent_dir / filename, {"providers": {spec["provider"]: provider}})
+        if spec["harness"] == "omp":
+            atomic_json(agent_dir / "worker.yml", {
+                "disabledProviders": ["native", "claude", "claude-plugins", "codex", "gemini", "opencode", "agents-md", "cursor", "github"],
+                "enabledProviders": [], "retry": {"fallbackChains": {}},
+                "telemetry": {"otlpExportEnabled": False}})
         spec["agent_dir"] = str(agent_dir)
+    else:
+        agent_dir = folder / (spec["harness"] + "-home")
+        agent_dir.mkdir(mode=0o700)
+        spec["agent_dir"] = str(agent_dir)
+        if spec["harness"] == "claude":
+            spec["session_id"] = str(uuid.uuid4())
+        else:
+            model = spec["provider"] + "/" + spec["model"]
+            key = "{env:" + spec["api_key_env"] + "}" if spec.get("api_key_env") else "unused-local-key"
+            atomic_json(agent_dir / "opencode.json", {
+                "provider": {spec["provider"]: {"npm": "@ai-sdk/openai-compatible", "name": "Foundry worker",
+                    "options": {"baseURL": spec["base_url"], "apiKey": key},
+                    "models": {spec["model"]: {"name": spec["model"], "limit": {
+                        "context": spec.get("context_window", 32768), "output": spec.get("max_tokens", 4096)}}}}},
+                "enabled_providers": [spec["provider"]], "model": model, "small_model": model,
+                "agent": {"foundry": {"mode": "primary", "model": model, "prompt": WORKER_INSTRUCTIONS}},
+                "permission": {"*": "deny", **{name: "allow" for name in (
+                    "read", "edit", "bash", "glob", "grep", "list", "external_directory")}},
+                "autoupdate": False, "snapshot": False, "share": "disabled", "plugin": [], "mcp": {}})
     return {"schema_version": 2, "worker": spec["name"], "harness": spec["harness"], "worker_config": spec}
 
 
@@ -294,6 +324,31 @@ def harness_command(task):
     # Flatten the existing profile into per-process overrides, as codex-spark's
     # shared-server launcher does. No config files or daemon settings change.
     spec = task.get("worker_config", {})
+    if spec.get("harness") == "claude":
+        command = [spec["binary"], "--bare", "--print", "--verbose", "--output-format", "stream-json",
+                   "--input-format", "text", "--model", spec["model"], "--effort", "medium", "--dangerously-skip-permissions",
+                   "--tools", "Bash,Read,Edit,Write,Glob,Grep", "--strict-mcp-config",
+                   "--mcp-config", '{"mcpServers":{}}', "--append-system-prompt", WORKER_INSTRUCTIONS]
+        command.extend(["--resume", task["resume_ref"]] if task.get("resume_ref") else ["--session-id", spec["session_id"]])
+        return command
+    if spec.get("harness") == "opencode":
+        command = [spec["binary"], "run", "--standalone", "--format", "json", "--model",
+                   spec["provider"] + "/" + spec["model"], "--agent", "foundry", "--auto"]
+        if task.get("resume_ref"):
+            command.extend(["--session", task["resume_ref"]])
+        return command
+    if spec.get("harness") == "omp":
+        model = spec["provider"] + "/" + spec["model"]
+        command = [spec["binary"], "--mode", "rpc", "--no-ui", "--no-extensions", "--no-skills",
+                   "--no-rules", "--no-lsp", "--no-title", "--no-prewalk", "--no-pty",
+                   "--config", str(Path(spec["agent_dir"]) / "worker.yml"),
+                   "--model", model, "--smol", model, "--slow", model, "--plan", model,
+                   "--tools", "read,bash,edit,write,grep,glob", "--thinking", "off",
+                   "--append-system-prompt", WORKER_INSTRUCTIONS,
+                   "--session-dir", str(Path(task["workspace"]).parent / "sessions")]
+        if task.get("resume_ref"):
+            command.extend(["--resume", task["resume_ref"]])
+        return command
     if spec.get("harness") == "pi":
         command = [spec["binary"], "--mode", "rpc", "--offline", "--no-extensions", "--no-mcp",
                    "--no-skills", "--no-prompt-templates", "--no-themes", "--no-context-files",
@@ -326,9 +381,37 @@ def harness_environment(task):
     # Give the worker a real, private Codex home for config, history, and caches.
     # This uses CODEX_HOME for its documented purpose, only in the child process.
     spec = task.get("worker_config", {})
-    if spec.get("harness") == "pi":
+    if spec.get("api_key_env") and not os.environ.get(spec["api_key_env"]):
+        raise Error(f"Missing credential environment variable: {spec['api_key_env']}")
+    if spec.get("harness") in {"pi", "omp"}:
         env = os.environ.copy()
-        env.update(PI_CODING_AGENT_DIR=spec["agent_dir"], PI_OFFLINE="1", PI_TELEMETRY="0")
+        env.update(PI_CODING_AGENT_DIR=spec["agent_dir"], PI_OFFLINE="1", PI_TELEMETRY="0", OTEL_SDK_DISABLED="true")
+        if spec["harness"] == "omp":
+            for key in ("OMP_PROFILE", "CLAUDE_CONFIG_DIR", "PI_SMOL_MODEL", "PI_SLOW_MODEL", "PI_PLAN_MODEL"):
+                env.pop(key, None)
+        return env
+    if spec.get("harness") == "claude":
+        env = os.environ.copy()
+        for key in ("CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY", "ANTHROPIC_AUTH_TOKEN"):
+            env.pop(key, None)
+        env.update(CLAUDE_CONFIG_DIR=spec["agent_dir"], ANTHROPIC_BASE_URL=spec["base_url"],
+                   ANTHROPIC_MODEL=spec["model"], ANTHROPIC_SMALL_FAST_MODEL=spec["model"],
+                   ANTHROPIC_API_KEY=os.environ[spec["api_key_env"]] if spec.get("api_key_env") else "unused-local-key",
+                   CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC="1", CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS="1")
+        if spec.get("auth_mode") == "bearer":
+            env["ANTHROPIC_CUSTOM_HEADERS"] = "Authorization: Bearer " + env["ANTHROPIC_API_KEY"]
+        for role in ("HAIKU", "SONNET", "OPUS"):
+            env["ANTHROPIC_DEFAULT_" + role + "_MODEL"] = spec["model"]
+        return env
+    if spec.get("harness") == "opencode":
+        env = os.environ.copy()
+        directory = Path(spec["agent_dir"])
+        for kind in ("DATA", "CONFIG", "CACHE", "STATE"):
+            env["XDG_" + kind + "_HOME"] = str(directory / kind.lower())
+        env.update(OPENCODE_CONFIG_CONTENT=(directory / "opencode.json").read_text(),
+                   OPENCODE_CONFIG_DIR=str(directory / "config"), OPENCODE_DISABLE_PROJECT_CONFIG="true",
+                   OPENCODE_DISABLE_CLAUDE_CODE="true", OPENCODE_DISABLE_AUTOUPDATE="true",
+                   OPENCODE_DISABLE_DEFAULT_PLUGINS="true", OPENCODE_DISABLE_EXTERNAL_SKILLS="true")
         return env
     original = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex"))
     worker_codex_home = project_state(Path(task["project"])) / "codex-home"
@@ -349,6 +432,10 @@ class Rpc:
     """Asynchronous LF-delimited client; stderr goes to the task log."""
     def __init__(self, command, cwd, log, events, env=None, dialect="codex"):
         self.dialect = dialect
+        env = dict(os.environ if env is None else env)
+        # OpenCode's headless CLI prefers PWD to process.cwd(). Keep the logical
+        # directory consistent with Popen(cwd=...), never the operator checkout.
+        env["PWD"] = str(Path(cwd).resolve())
         self.log = log.open("ab")
         self.events = events.open("a", encoding="utf-8")
         self.proc = subprocess.Popen(command, cwd=cwd, stdin=subprocess.PIPE,
@@ -394,6 +481,7 @@ class Rpc:
 
     def call(self, method, params=None, timeout=60):
         req = self.send(method, params)
+        self.last_request_id = req
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             try:
@@ -463,13 +551,13 @@ def worker(path):
             task.update(freeze_worker(task["worker_config"], folder, task["sandbox"]))
             update_task(path, **{k: task[k] for k in ("worker_config", "harness", "worker", "schema_version")})
         spec = task["worker_config"]
-        if spec["harness"] == "pi" and task["sandbox"] != "danger-full-access":
-            raise Error("Pi workers require explicit danger-full-access; no sandbox downgrade is allowed.")
+        check_policy(spec, task["sandbox"])
         command = harness_command(task)
-        kwargs = {"dialect": "pi"} if spec["harness"] == "pi" else {}
+        streaming = spec["harness"] in {"claude", "opencode"}
+        kwargs = {"dialect": "pi"} if spec["harness"] in {"pi", "omp"} else {}
         rpc = Rpc(command, task["workspace"], folder / "app-server.log", folder / "events.jsonl",
                   env=harness_environment(task), **kwargs)
-        adapter = (PiWorker if spec["harness"] == "pi" else CodexWorker)(rpc, task)
+        adapter = ADAPTERS[spec["harness"]](rpc, task)
         update_task(path, **adapter.start(WORKER_INSTRUCTIONS))
         if cancelled.exists() or stopping.is_set():
             update_task(path, status="cancelled", finished_at=now())
@@ -490,11 +578,17 @@ def worker(path):
                 raise Error(f"Worker {reason}; interrupt did not finish in 15 seconds.")
             try:
                 msg = pending.pop(0) if pending else rpc.receive()
+                event = adapter.event(msg)
             except queue.Empty:
                 continue
-            event = adapter.event(msg)
+            except EOFError:
+                if not streaming:
+                    raise
+                event = adapter.finish()
             if not event:
                 continue
+            if event.get("resume_ref"):
+                update_task(path, resume_ref=event["resume_ref"])
             event.update(timestamp=now(), attempt=task["attempt"], harness=spec["harness"])
             with (folder / "progress.jsonl").open("a", encoding="utf-8") as stream:
                 stream.write(json.dumps(event, ensure_ascii=False) + "\n")
@@ -713,7 +807,7 @@ def command_doctor(args):
     check_policy(spec, config.get("sandbox", "workspace-write"))
     checks = {"project_enabled": True, "explicit_only": "allow_implicit_invocation: false" in
               (root / SKILL / "agents/openai.yaml").read_text(),
-              "harness_binary": Path(spec["binary"]).is_file() and os.access(spec["binary"], os.X_OK),
+              "harness_binary": bool(shutil.which(spec["binary"])),
               "initial_commit": git(root, "rev-parse", "--verify", "HEAD", check=False).returncode == 0}
     parsed = urllib.parse.urlsplit(spec["base_url"])
     health_url = spec.get("health_url", urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, "/health", "", "")))
@@ -769,36 +863,115 @@ def write_settings(settings):
 
 def command_configure(args):
     settings = json.loads(json.dumps(SETTINGS))
-    name = args.worker or ("pi-local" if args.harness == "pi" else "codex-local")
+    harness = "claude" if args.harness == "claude-code" else args.harness
+    name = args.worker or (harness + "-local")
     if not re.fullmatch(r"[A-Za-z0-9_-]+", name):
         raise Error("Worker names may contain letters, numbers, underscores and hyphens.")
-    if args.harness == "pi":
-        if not args.models or not args.provider or not args.model:
-            raise Error("Pi requires --models FILE --provider NAME --model ID.")
-        spec = {"harness": "pi", "models": str(Path(args.models).expanduser().resolve()),
-                "provider": args.provider, "model": args.model,
-                "binary": str(Path(shutil.which(args.pi) or args.pi).expanduser().resolve())}
+    key_env = args.api_key_env
+    if args.context_window < 1 or args.max_tokens < 1:
+        raise Error("Context and output token limits must be positive.")
+    if key_env and not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key_env):
+        raise Error("--api-key-env takes an environment variable name, never a secret value.")
+    if args.base_url:
+        parsed = urllib.parse.urlsplit(args.base_url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.username or parsed.password:
+            raise Error("Use an HTTP(S) base URL without embedded credentials.")
+    binary = args.binary or (args.codex or str(CODEX) if harness == "codex" else args.pi if harness == "pi" else harness)
+    resolved = shutil.which(binary)
+    binary = resolved or (str(Path(binary).expanduser().resolve()) if "/" in binary else binary)
+    spec = {"harness": harness, "binary": binary}
+    if harness in {"pi", "omp"}:
+        if not args.model or (not args.models and not args.base_url):
+            raise Error(f"{harness} requires --model and either --models FILE or --base-url URL.")
+        if args.models and args.base_url:
+            raise Error("Use --models or --base-url, not both.")
+        provider = args.provider or "local"
+        models = Path(args.models).expanduser().resolve() if args.models else CONFIG_FILE.parent / "workers" / name / "models.json"
+        if not args.models:
+            key = ("$" + key_env if harness == "pi" else key_env) if key_env else "unused-local-key"
+            atomic_json(models, {"providers": {provider: {"baseUrl": args.base_url,
+                "api": "openai-completions", "apiKey": key, "models": [{"id": args.model,
+                "name": args.model, "reasoning": False, "input": ["text"],
+                "contextWindow": args.context_window, "maxTokens": args.max_tokens,
+                "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0}}]}}})
+        spec.update(models=str(models), provider=provider, model=args.model)
+    elif harness in {"claude", "opencode"}:
+        if not args.base_url or not args.model:
+            raise Error(f"{harness} requires --base-url URL and --model ID; cloud defaults are not imported.")
+        spec.update(base_url=args.base_url, model=args.model,
+                    provider=args.provider or ("local" if harness == "opencode" else "anthropic-compatible"),
+                    context_window=args.context_window, max_tokens=args.max_tokens)
+        if harness == "claude":
+            spec["auth_mode"] = args.auth_mode
     else:
         if not args.profile:
             raise Error("Codex requires --profile FILE.")
         profile = Path(args.profile).expanduser().resolve()
         model_profile(profile)
-        spec = {"harness": "codex", "profile": str(profile),
-                "binary": str(Path(shutil.which(args.codex or str(CODEX)) or args.codex or str(CODEX)).expanduser().resolve())}
+        spec["profile"] = str(profile)
         if name == "codex-local":
             settings["worker_profile"] = str(profile)
-            if args.codex:
-                settings["codex_binary"] = spec["binary"]
+            settings["codex_binary"] = binary
+    if key_env:
+        spec["api_key_env"] = key_env
     if args.health_url is not None:
         spec["health_url"] = args.health_url
     elif "health_url" in settings.get("workers", {}).get(name, {}):
         spec["health_url"] = settings["workers"][name]["health_url"]
-    # Validate before saving, including the selected Pi model definition.
     select_worker(name, {**settings, "workers": {**settings.get("workers", {}), name: spec}})
     settings.setdefault("workers", {})[name] = spec
     write_settings(settings)
-    output({"config": str(CONFIG_FILE), "worker": name, "harness": args.harness,
+    output({"config": str(CONFIG_FILE), "worker": name, "harness": harness,
             "note": "Normal Codex settings and delegation are unchanged. Select this worker with enable or submit --worker."})
+
+
+def command_workers(args):
+    rows = []
+    names = set(SETTINGS.get("workers", {}))
+    if PROFILE.is_file():
+        names.add("codex-local")
+    for name in sorted(names):
+        raw = SETTINGS.get("workers", {}).get(name, {})
+        try:
+            spec = select_worker(name)
+            rows.append({"worker": name, "harness": spec["harness"], "model": spec["model"],
+                         "provider": spec["provider"], "binary": spec["binary"],
+                         "installed": bool(shutil.which(spec["binary"])), "valid": True})
+        except (Error, OSError, ValueError, KeyError) as exc:
+            rows.append({"worker": name, "harness": raw.get("harness", "codex"), "valid": False, "error": str(exc)})
+    available = [{"harness": harness, "binary": shutil.which(harness),
+                  "installed": bool(shutil.which(harness))} for harness in ADAPTERS]
+    output({"config": str(CONFIG_FILE), "harnesses": available, "workers": rows})
+
+
+def command_setup(args):
+    if not sys.stdin.isatty():
+        raise Error("setup needs an interactive terminal. Use foundry configure --help for scripting.")
+    def ask(label, default=""):
+        answer = input(label + (f" [{default}]" if default else "") + ": ").strip()
+        return answer or default
+    args.harness = ask("Harness: codex, pi, omp, opencode, claude", "pi")
+    if args.harness not in ADAPTERS:
+        raise Error("Unknown harness. Choose " + ", ".join(ADAPTERS))
+    args.worker = ask("Worker name", args.harness + "-local")
+    args.binary = ask("Harness executable", args.harness)
+    if args.harness == "codex":
+        args.profile = ask("Local Codex profile", str(PROFILE))
+    else:
+        args.base_url = ask("Model base URL (Claude needs Anthropic Messages)", "http://127.0.0.1:18888/v1" if args.harness != "claude" else "http://127.0.0.1:18888")
+        args.model = ask("Exact served model ID", "local-worker")
+        if args.harness != "claude":
+            args.provider = ask("Provider name", "local")
+        args.api_key_env = ask("Credential environment variable name (blank for no auth)") or None
+        if args.harness == "claude":
+            args.auth_mode = ask("Endpoint auth header: api-key or bearer", "api-key")
+            if args.auth_mode not in {"api-key", "bearer"}:
+                raise Error("Choose api-key or bearer authentication.")
+    command_configure(args)
+    print("Next: foundry workers; then inside your project:")
+    print(f"  foundry enable --worker {args.worker}" + (" --sandbox danger-full-access" if args.harness != "codex" else ""))
+    print("  foundry doctor")
+    print('  foundry run "your task"')
 
 
 def bounded_seconds(text):
@@ -815,9 +988,11 @@ def main():
         return
     parser = argparse.ArgumentParser(description="Frontier Foundry: explicit local-model workers for Codex.",
                                      epilog="Quick start: spark-workers enable; then in Codex: $spark-workers <task>")
-    parser.add_argument("--version", action="version", version="Frontier Foundry 0.2.0")
+    parser.add_argument("--version", action="version", version="Frontier Foundry 0.3.0")
     commands = parser.add_subparsers(dest="command", required=True)
     actions = {
+        "setup": (command_setup, "Interactively register a worker"),
+        "workers": (command_workers, "List configured workers and executable availability"),
         "configure": (command_configure, "Select your local worker profile without changing normal Codex settings"),
         "enable": (command_enable, "Enable this project; native Codex agents stay the default"),
         "disable": (command_disable, "Remove this project's integration"),
@@ -851,8 +1026,14 @@ def main():
         if name == "run":
             sub.add_argument("--full-access", action="store_true", help="Explicitly use full-access permissions for this operator session too (needed when host sandboxing is unavailable)")
             sub.add_argument("--model", help="Frontier operator model; omitted preserves your normal Codex model")
-        if name == "configure":
-            sub.add_argument("--harness", choices=("codex", "pi"), default="codex")
+        if name in {"configure", "setup"}:
+            sub.add_argument("--harness", choices=(*ADAPTERS, "claude-code"), default="codex")
+            sub.add_argument("--binary", help="Harness executable (all harnesses)")
+            sub.add_argument("--base-url", help="Model endpoint; Chat Completions for Pi/OMP/OpenCode, Anthropic Messages for Claude")
+            sub.add_argument("--api-key-env", help="Credential environment variable NAME; never pass the secret itself")
+            sub.add_argument("--auth-mode", choices=("api-key", "bearer"), default="api-key", help="Claude endpoint authentication header (default: api-key)")
+            sub.add_argument("--context-window", type=int, default=32768, help="Advertised context for Pi/OMP/OpenCode (default: 32768)")
+            sub.add_argument("--max-tokens", type=int, default=4096, help="Output limit for Pi/OMP/OpenCode (default: 4096); Claude uses native defaults")
             sub.add_argument("--pi", default="pi", help="Pi executable name or path")
             sub.add_argument("--models", help="Pi models.json containing the selected custom provider")
             sub.add_argument("--provider", help="Pi custom provider name")
@@ -860,7 +1041,7 @@ def main():
             sub.add_argument("--profile", help="Path to a Codex TOML profile with a custom local Responses provider")
             sub.add_argument("--codex", help="Codex executable name or path (default: PATH)")
             sub.add_argument("--health-url", help="Optional health endpoint; an empty value disables the health request")
-        if name in {"configure", "enable", "submit", "doctor"}:
+        if name in {"configure", "setup", "enable", "submit", "doctor"}:
             sub.add_argument("--worker", help="Named worker (default: project choice, otherwise codex-local)")
         if name == "enable":
             sub.add_argument("--update", action="store_true", help="Refresh a previously installed skill")
@@ -879,6 +1060,9 @@ def main():
         parser.error("wait --seconds is limited to 60 seconds; use repeated waits")
     try:
         args.func(args)
+    except (KeyboardInterrupt, EOFError):
+        print("Cancelled.", file=sys.stderr)
+        raise SystemExit(130)
     except (Error, OSError, ValueError) as exc:
         print(f"spark-workers: {exc}", file=sys.stderr)
         raise SystemExit(1)

@@ -2,8 +2,10 @@
 
 ## Choose the worker protocol
 
-Pi can connect directly to a Chat Completions endpoint. Codex requires Responses.
-Both need working tool calling, result continuation, and the context size you
+Pi, OMP, and OpenCode can connect directly to a Chat Completions endpoint. Codex
+requires Responses; Claude Code requires an Anthropic Messages-compatible endpoint.
+See [harness setup](harnesses.md) for the additional harnesses.
+All paths need working tool calling, result continuation, and the context size you
 advertise. A health endpoint alone does not prove compatibility.
 
 ### Pi: direct compatible provider

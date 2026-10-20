@@ -4,8 +4,8 @@
 
 The operator is your normal frontier-model Codex session. It sees your prompt,
 plans work, submits assignments through a shell tool, and decides what to accept.
-The local worker is a separate Codex app-server or Pi RPC process using a
-configured local-model provider. The bridge is a Python supervisor and CLI.
+The local worker is a separate Codex, Pi, OMP, OpenCode, or Claude Code process
+using a configured model provider. The bridge is a Python supervisor and CLI.
 `worker_harnesses.py` contains the two protocol adapters; the shared supervisor
 owns jobs, inference locking, worktrees, cancellation deadlines, and application.
 No MCP server or SDK is needed between the operator and bridge.
@@ -24,22 +24,28 @@ multi-host worker scheduling, or a remote execution cluster.
 2. A detached worktree is created from that snapshot. The bridge saves task state
    and launches a detached supervisor, so the operator's shell can return.
 3. At submission, the bridge freezes the selected worker configuration and
-   execution mode. Codex profiles and the selected Pi provider/model definition
-   are copied into private task state. Binary paths are saved, but binary contents,
+   execution mode. Codex profiles and Pi/OMP provider definitions are copied into
+   private task state; OpenCode and Claude configs are generated from saved settings. Binary paths are saved, but binary contents,
    referenced catalogs, credential helpers, and environment values are not locked.
 4. The supervisor waits for the bridge-wide inference lock and starts a dedicated
    harness over stdio. Codex uses `initialize` and `thread/start` or `thread/resume`;
-   Pi uses `get_state` with a persistent session file. Both verify model identity
-   before submitting the assignment. Pi also checks its API and endpoint.
+   Pi and OMP use `get_state` with a persistent session file. These RPC adapters
+   verify model identity before submitting assignments. OpenCode and Claude use
+   native headless JSON streams with explicit endpoint/model flags and private
+   configuration. Claude also checks the model/session reported by its init event.
+   OpenCode has no equivalent pre-inference identity handshake in its CLI stream.
 5. The harness calls the model and executes read/edit/test tools. Codex uses the
-   saved sandbox mode. Pi requires explicit `danger-full-access`; it has no
-   equivalent workspace sandbox and is rejected otherwise.
+   saved sandbox mode. Other harnesses require explicit `danger-full-access`;
+   this bridge does not provide equivalent workspace sandboxing for them.
 6. Raw received records are saved to `events.jsonl`. Adapter events become common
-   `report`, `tool`, and `finished` records in `progress.jsonl`, tagged with harness,
+   `identity`, `report`, `tool`, and `finished` records in `progress.jsonl`, tagged with harness,
    attempt, and timestamp. Reports go to `report.txt`. Codex completes on the
    matching `turn/completed`; Pi completes on `agent_settled`, checking the final
    assistant stop reason. Pi's `agent_end` alone is insufficient because retries
-   or compaction may continue afterward.
+   or compaction may continue afterward. OMP waits for its correlated prompt
+   result and session quiescence. OpenCode and Claude must exit cleanly as well
+   as satisfy their result contracts; acknowledgments and intermediate reports
+   do not establish success. See [harness details](harnesses.md).
 7. The operator uses `wait`/`status`, then `result` and `diff`. These command outputs
    are ordinary tool results that enter the operator's conversation. The worker
    does not share memory with the operator or push an automatic native subagent
@@ -69,7 +75,10 @@ PROJECT_HASH/
     report.txt            Agent messages from the latest attempt
     report-attempt-N.txt  Earlier attempt's report
     worker.config.toml    Frozen Codex worker profile (Codex jobs)
-    pi-home/models.json   Selected provider/model in a private Pi home (Pi jobs)
+    pi-home/models.json   Selected provider/model (Pi jobs)
+    omp-home/             Private OMP models.yml and discovery overlay
+    opencode-home/        Private runtime config and XDG directories
+    claude-home/          Private Claude sessions/config
     sessions/             Persistent Pi conversation (Pi jobs)
     progress.jsonl        Common report/tool/finished records across attempts
     events.jsonl          Raw received harness records across attempts
@@ -92,6 +101,14 @@ approval, and startup network checks are disabled. The worker instructions ask i
 to read applicable `AGENTS.md` files itself. Provider requests still use the network.
 Credentials may use environment references in the private model configuration.
 
+OMP also gets a private agent directory and a restricted configuration overlay.
+OpenCode uses a private standalone server and job-local XDG directories. Claude
+uses a private `CLAUDE_CONFIG_DIR`, bare mode, an explicit tool allowlist, and
+empty strict MCP configuration. Secrets supplied through `--api-key-env` resolve
+in child environments, while only their variable names enter the worker registry.
+Claude endpoints can select an explicit bearer-header mode. See
+[harness support](harnesses.md) for permission and API limitations.
+
 Version-2 jobs store `worker`, `harness`, `worker_config`, and an opaque
 `resume_ref`. Codex keeps the legacy `thread_id` field too. Legacy job records
 without harness metadata are treated as Codex jobs and frozen when resumed.
@@ -108,7 +125,8 @@ a parallel GPU scheduler, and queue order is not guaranteed to be FIFO.
 
 - `cancel` creates a cancellation marker. A queued supervisor exits before
   inference; an active one requests Codex `turn/interrupt` or Pi `clear_queue` and
-  `abort`. Files and logs are retained.
+  `abort`. OMP uses `abort`; headless OpenCode/Claude children receive SIGINT.
+  Files and logs are retained.
 - The turn time limit triggers interruption and records failure. The supervisor
   closes its dedicated harness after the turn or an unrecoverable error.
 - Interactive approvals or questions cannot be answered by an unattended worker;

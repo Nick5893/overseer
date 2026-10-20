@@ -22,19 +22,23 @@ def run(command, **kwargs):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--harness", choices=("codex", "pi"), required=True)
+    parser.add_argument("--harness", choices=("codex", "pi", "omp", "opencode", "claude"), required=True)
     parser.add_argument("--binary", help="Worker harness executable (default: PATH)")
     parser.add_argument("--profile", help="Codex local Responses profile")
     parser.add_argument("--models", help="Pi custom models.json")
     parser.add_argument("--provider", default="local")
     parser.add_argument("--model", default="local-worker")
+    parser.add_argument("--base-url", help="Explicit endpoint for OMP/OpenCode/Claude, or Pi without a models file")
+    parser.add_argument("--api-key-env", help="Credential environment variable name")
+    parser.add_argument("--auth-mode", choices=("api-key", "bearer"), default="api-key")
     parser.add_argument("--full-access", action="store_true", help="Explicitly allow unrestricted worker execution")
     parser.add_argument("--output", type=Path, help="New evidence directory; default: private temporary directory")
     args = parser.parse_args()
-    if args.harness == "pi" and not args.full_access:
-        parser.error("Pi requires explicit --full-access")
-    if (args.harness == "codex" and not args.profile) or (args.harness == "pi" and not args.models):
-        parser.error("Pass --profile for Codex or --models for Pi")
+    if args.harness != "codex" and not args.full_access:
+        parser.error("This harness requires explicit --full-access")
+    if ((args.harness == "codex" and not args.profile) or
+            (args.harness != "codex" and not args.models and not args.base_url)):
+        parser.error("Pass --profile for Codex; otherwise --base-url or --models for Pi/OMP")
     os.umask(0o077)
     if args.output:
         base = args.output.expanduser().resolve()
@@ -94,10 +98,17 @@ class Tests(unittest.TestCase):
     if args.harness == "codex":
         configure += ["--profile", str(Path(args.profile).expanduser().resolve())]
     else:
-        configure += ["--models", str(Path(args.models).expanduser().resolve()),
-                      "--provider", args.provider, "--model", args.model]
+        configure += ["--provider", args.provider, "--model", args.model]
+        if args.models:
+            configure += ["--models", str(Path(args.models).expanduser().resolve())]
+        else:
+            configure += ["--base-url", args.base_url]
+        if args.api_key_env:
+            configure += ["--api-key-env", args.api_key_env]
+        if args.harness == "claude":
+            configure += ["--auth-mode", args.auth_mode]
     if args.binary:
-        configure += ["--codex" if args.harness == "codex" else "--pi", args.binary]
+        configure += ["--binary", args.binary]
     cli(*configure)
     name = args.harness + "-local"
     cli("enable", "--worker", name, "--sandbox", "danger-full-access" if args.full_access else "workspace-write")
