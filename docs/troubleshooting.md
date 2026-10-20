@@ -1,0 +1,27 @@
+# Troubleshooting
+
+| Symptom | What to check |
+| --- | --- |
+| `foundry` is not found | Put the install prefix's `bin` directory on PATH. |
+| Installer refuses a command link | Use a separate prefix for a preview, or `--force` only to intentionally replace that link. The installer prechecks all links before copying. |
+| Missing worker profile | Run `foundry configure --profile /absolute/path/to/profile.config.toml`. |
+| Project is not enabled | Run `foundry enable` in that Git project, then open a fresh Codex session to discover `$spark-workers`. |
+| No initial commit | Commit the project's initial files before submitting a worker task. |
+| Health check fails | Start the local backend and adapter; inspect configured ports. Set `configure --health-url URL`, or `--health-url ''` if the server has no health route. |
+| HTTP 404 on `/v1/responses` | The backend may only implement Chat Completions. The adapter does not add a Responses implementation. |
+| Model/provider mismatch | Check the worker profile and served alias. The bridge deliberately refuses inference with a different returned identity. |
+| Unknown catalog fields or protocol methods | The installed Codex version differs from the tested protocol. Inspect generated schemas and regenerate the local catalog from the installed binary. |
+| Freeform/namespaced tool error | Use the included adapter if the backend supports only ordinary function tools, and ensure the model emits valid arguments. |
+| Tool calls never execute | Verify the model server's tool parser and chat template; inspect the task event log and harness stderr. A text-only model response is insufficient. |
+| Bubblewrap/user namespace failure | Fix the host sandbox/container setup, or explicitly choose full-access worker and operator modes if appropriate. There is no automatic escalation. |
+| Worker asks an interactive question | Unattended workers cannot answer it. Give a complete assignment, or resolve the requirement in the operator and follow up. |
+| Task stays queued | Another bridge worker holds the global inference slot. Other local-model clients are outside this queue. |
+| Task is orphaned after a crash/reboot | Inspect logs, then use `followup` to resume the saved thread/worktree. Supervisors do not automatically restart after reboot. |
+| Patch application conflicts | Original files changed since the snapshot or another task overlaps. Inspect the diff and integrate deliberately; do not force an overwrite. |
+| Newly installed dependency is missing | Ignored environments and dependencies are not copied into worktrees. Give the worker appropriate setup instructions or have the operator arrange the environment. |
+| `$spark-workers` is absent from normal prompt metadata | Expected: implicit invocation is disabled. It should be available in the skill selector in enabled projects. |
+
+Use `foundry result JOB_ID --project /path/to/project` to find `report.txt`,
+`events.jsonl`, `app-server.log`, and the private worktree. Review the terminal
+status as well as the report: completed model output is not proof that tests
+passed or that every acceptance criterion was met.

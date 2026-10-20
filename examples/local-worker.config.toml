@@ -1,0 +1,21 @@
+# Copy to ~/.codex/local-worker.config.toml and replace the catalog path.
+# The alias must match your local server's served model name.
+model = "local-worker"
+model_provider = "local_worker"
+model_reasoning_effort = "medium"
+model_context_window = 65536
+model_auto_compact_token_limit = 48000
+model_catalog_json = "/absolute/path/to/local-worker-models.json"
+web_search = "disabled"
+
+[model_providers.local_worker]
+name = "Local implementation worker"
+base_url = "http://127.0.0.1:18991/v1"
+wire_api = "responses"
+requires_openai_auth = false
+supports_websockets = false
+stream_idle_timeout_ms = 900000
+
+# If your backend requires authentication, uncomment this and export the key
+# in the shell that starts the operator. Never commit the key itself.
+# env_key = "LOCAL_MODEL_API_KEY"

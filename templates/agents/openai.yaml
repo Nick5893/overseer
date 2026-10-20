@@ -1,0 +1,6 @@
+interface:
+  display_name: "Spark Workers"
+  short_description: "Delegate explicit tasks to local Qwen workers"
+  default_prompt: "Use $spark-workers to plan this task, delegate implementation to local Qwen, and review and verify the result."
+policy:
+  allow_implicit_invocation: false

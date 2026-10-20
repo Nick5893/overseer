@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.coverage
+htmlcov/
+.env
+.env.*
+!.env.example
+*.log
+*.local.toml
+auth.json
+rollout-*.jsonl
+.DS_Store
