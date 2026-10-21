@@ -1,9 +1,10 @@
 # Adding another harness
 
 The adapters cover Codex app-server, Pi RPC, OMP RPC, OpenCode, and Claude Code.
-Their implementation is
-in `worker_harnesses.py`. The worker side is adaptable; the shipped operator
-integration is still the explicit Codex project skill.
+Their implementation is in `worker_harnesses.py`. New worker harnesses need an
+adapter. Operators use the existing CLI through their shell tool and do not need
+an adapter; see the [operator workflow](../README.md#3-open-your-chosen-orchestrator-and-give-it-work).
+The shipped automatic launch/skill integration is specific to Codex.
 
 ## The small contract
 
@@ -49,10 +50,11 @@ conversation between harnesses.
 There is no adapter SDK, plugin registry, task-routing model, cross-harness
 conversation converter, distributed scheduler, or new operator UI. The current
 bridge needs ordinary local command execution and endpoint access. Another
-operator could run the same CLI, but it would need its own planning/review
-instructions; this repository only supplies the Codex skill.
+operator runs the same CLI with planning/review instructions supplied through its
+own project instructions or prompt. The README includes a reusable workflow;
+this repository also supplies a Codex skill.
 
 External jobs remain visible through CLI results and saved logs, rather than
-pretending to be native Codex subagents. MCP-free transport is useful when an
-operator can run approved commands but cannot register MCP servers. It does not
+pretending to be native subagents of the operator harness. MCP-free transport is
+useful when an operator can run approved commands but cannot register MCP servers. It does not
 bypass command restrictions or model-access policies.

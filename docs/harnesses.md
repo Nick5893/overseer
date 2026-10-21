@@ -1,9 +1,13 @@
 # Harness support
 
-The operator remains Codex. `--harness` selects the implementation worker's tool
-runtime; `--model` selects its model. Jobs still return through `overseer result`
-and `overseer diff`, regardless of harness. No MCP transport or agent SDK is needed
-by the bridge.
+Your operator can be any coding harness with shell execution and access to the
+shared project filesystem and Overseer state. `configure --harness` selects the
+implementation worker's tool runtime; its `--model` selects the worker model.
+These choices are independent of the operator. Jobs return through
+`overseer result` and `overseer diff`, regardless of harness. No MCP transport or
+agent SDK is needed by the bridge. The supplied skill and `overseer run` launcher
+are Codex conveniences; other operators use the
+[CLI workflow](../README.md#3-open-your-chosen-orchestrator-and-give-it-work).
 
 | Harness | Transport | Completion boundary | Resume reference |
 | --- | --- | --- | --- |
@@ -35,6 +39,8 @@ overseer configure --harness claude --worker claude-local \
 # Inside your project:
 overseer enable --worker code-local --sandbox danger-full-access
 overseer doctor
+
+# Optional: launch Codex as the operator. Otherwise open your chosen harness.
 overseer run "Implement and verify the feature"
 ```
 

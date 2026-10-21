@@ -2,13 +2,20 @@
 
 ## Roles
 
-The operator is your normal frontier-model Codex session. It sees your prompt,
+The operator is your chosen coding harness with a frontier model, shell execution,
+and access to the shared project filesystem and Overseer state. It sees your prompt,
 plans work, submits assignments through a shell tool, and decides what to accept.
 The local worker is a separate Codex, Pi, OMP, OpenCode, or Claude Code process
 using a configured model provider. The bridge is a Python supervisor and CLI.
-`worker_harnesses.py` contains the two protocol adapters; the shared supervisor
+`worker_harnesses.py` contains the worker adapters; the shared supervisor
 owns jobs, inference locking, worktrees, cancellation deadlines, and application.
 No MCP server or SDK is needed between the operator and bridge.
+
+Operator and worker harnesses are independent choices. Operators use the same CLI
+contract to submit work and collect results, without an operator-specific adapter.
+The repository supplies a Codex project skill and Codex-only `overseer run`
+launcher; other operators use their own launch command and planning/review
+instructions. See the [quick start](../README.md#3-open-your-chosen-orchestrator-and-give-it-work).
 
 The supported topology is a shared Linux filesystem for operator, bridge, Git
 checkout, and worker tools. Inference can be local or accessible through a

@@ -6,17 +6,22 @@
 
 **Frontier models plan and review. Local models write and test the code.**
 
-Overseer lets a Codex operator delegate implementation to a local model
-running in **Codex, Pi, OMP, OpenCode, or Claude Code**, then bring its report and
-code changes back into the same operator session. Pick the harness that works
-with your model server.
+Overseer connects your chosen orchestrator to local coding workers. Any coding
+harness that can run shell commands and access the project filesystem can act as
+the operator: plan assignments, dispatch work, read reports and diffs, request
+corrections, and integrate the results in the same session.
+
+Choose the two sides independently. Your operator uses the harness and model you
+prefer; workers run in **Codex, Pi, OMP, OpenCode, or Claude Code** against your
+configured model endpoint. For example, a Claude Code operator could delegate to
+Codex/Qwen workers, or a Codex operator could use Pi workers.
 
 A small Python CLI connects the processes over stdio. No MCP server, agent SDK,
 message broker, or extra daemon is required by the bridge.
 
 ```mermaid
 flowchart LR
-    U[Your prompt] --> O[Codex operator\nfrontier model]
+    U[Your prompt] --> O[Your chosen operator harness\nfrontier model]
     O -->|assignment| F[Overseer CLI]
     F --> H[Selected worker harness]
     H --> L[Configured model endpoint]
@@ -26,8 +31,10 @@ flowchart LR
     O -->|reviewed apply| G[Your project]
 ```
 
-- **Opt in per project.** Invoke `$overseer` explicitly; ordinary Codex
-  prompts and native subagents keep their normal behavior.
+- **Choose your orchestrator.** The operator calls the CLI through its shell tool;
+  no operator-specific bridge adapter is required.
+- **Opt in per project.** Request Overseer explicitly. Your harness's usual
+  delegation stays unchanged; Codex users can invoke the supplied `$overseer` skill.
 - **Mix worker harnesses.** Use a project default or select a worker per job.
 - **Keep work reviewable.** Each job has a private worktree, report, event logs,
   cancellation, and follow-up in the same worker conversation.
@@ -37,7 +44,8 @@ flowchart LR
 ## Requirements
 
 - Linux, Python 3.11+, and Git. Enabled projects need an initial commit.
-- Codex CLI authenticated for your frontier operator.
+- An operator harness with shell execution and access to the same Linux project
+  filesystem and Overseer state. Configure its model and authentication normally.
 - At least one worker harness and a tool-capable model endpoint:
 
 | Worker | Model API | Execution permissions |
@@ -65,7 +73,7 @@ overseer --version
 
 Repository access is required while this repo is private. Installation creates
 `overseer`, the optional Codex helpers `overseer-adapter` and `overseer-catalog`,
-and a `spark-workers` compatibility command. It leaves global Codex configuration,
+and a `spark-workers` compatibility command. It leaves global harness configuration,
 other projects, and shell startup files alone.
 
 To keep an existing `spark-workers` command, install with
@@ -82,10 +90,11 @@ Reinstall from an updated checkout to update the CLI. Existing configuration,
 task state, opt-in markers, and compatibility commands are preserved. The
 checkout directory can keep its existing name.
 
-`$overseer` is the explicit project skill; `$spark-workers` remains an alias.
+For Codex, `$overseer` is the explicit project skill; `$spark-workers` remains an
+alias.
 Refresh an enabled project's skills with `overseer enable --update`. Older
 projects can still launch through their existing skill until refreshed. Global
-Codex settings and native delegation stay unchanged.
+harness settings and native delegation stay unchanged.
 
 ## Configure from the CLI
 
@@ -96,8 +105,8 @@ overseer configure --help  # Scriptable configuration options
 ```
 
 `setup` registers a worker in Overseer's private configuration. It does not install
-a harness, enable a project, or change Codex defaults. Install the harness you
-choose separately, or pass its executable with `--binary PATH`. Credential prompts
+a harness, enable a project, or change operator defaults. Install the worker
+harness separately, or pass its executable with `--binary PATH`. Credential prompts
 ask for an environment variable **name**, never a secret value.
 
 For a local Chat Completions server, the same short configuration works with
@@ -178,7 +187,33 @@ This bridge does not provide Codex-equivalent workspace sandboxing for them. **A
 for review; it is not a security sandbox.** Full-access tools can read and write
 outside the worktree. Overseer never downgrades `workspace-write` to full access.
 
-### 3. Open Codex and give it work
+### 3. Open your chosen orchestrator and give it work
+
+Start your operator harness in the enabled project. Put the following workflow
+in its project instructions or include it with your prompt:
+
+```text
+Use the Overseer CLI for local implementation workers. Consult overseer --help
+and each subcommand's --help for arguments. Run overseer doctor,
+inspect the project, and plan self-contained assignments with acceptance checks.
+Submit each assignment with overseer submit --prompt-file PATH. Collect results
+with overseer wait, overseer result, and overseer diff. Review the actual changes
+and test evidence; use overseer followup for corrections. Apply reviewed work
+with overseer apply, then verify it in the original project. Queue independent
+assignments together; integrate prerequisites before submitting dependent work.
+Keep the configured worker and permissions; report failures rather than silently
+switching providers. Do not substitute your harness's native subagents.
+
+Task: Implement CSV export for the report command and verify it.
+```
+
+Worker reports and diffs return as shell tool output in your operator's session.
+The operator collects them through the CLI; the bridge does not register jobs in
+the harness's native subagent panel or push completion notifications into its
+conversation. No MCP connection is needed.
+
+**Codex convenience integration.** The installer supplies an explicit project
+skill, and `overseer run` launches Codex with that skill:
 
 ```sh
 overseer run "Implement CSV export for the report command and verify it."
@@ -190,23 +225,18 @@ Or open a fresh normal Codex session in the enabled project and type:
 $overseer Implement CSV export for the report command and verify it.
 ```
 
-The operator reads the project, plans, submits implementation assignments,
-collects results, reviews diffs, requests corrections, and applies verified work.
-Worker reports and diffs appear as CLI tool results in Codex; these external jobs
-do not appear as native Codex subagents and do not push unsolicited completion
-messages into the conversation.
-
-`overseer run` preserves the operator's usual model and permissions. Use
-`--model MODEL_ID` to select an operator model, or `--full-access` when you
-explicitly want full access for that operator session as well. Worker and
-operator permissions are separate choices.
+`overseer run` is currently a Codex launcher, not a selector for other operator
+harnesses. It preserves your usual Codex model and permissions. Use
+`--model MODEL_ID` to select its model, or `--full-access` for that operator
+session. For another operator, launch its own CLI normally and use the workflow
+above. Worker and operator permissions are separate choices.
 
 ## Delegate multiple assignments
 
-One operator can manage several local worker jobs. For example, Codex with an
-OpenAI model can plan a feature and submit three assignments to Codex workers
-using the same configured Qwen endpoint. Each job has its own assignment,
-conversation, Git worktree, report, logs, and diff. Corrections resume that job's
+One operator can manage several local worker jobs. Your chosen harness can plan
+a feature and submit three assignments to workers using the same configured
+Qwen endpoint. Each job has its own assignment, conversation, Git worktree,
+report, logs, and diff. Corrections resume that job's
 saved conversation and worktree.
 
 **Jobs queue; one local worker runs at a time within a shared state directory.**
@@ -215,19 +245,18 @@ one at a time, and queue order is not guaranteed. This limit applies
 across enabled projects sharing that state directory; it does not control other
 clients of your model server.
 
-After configuring `codex-local` for Qwen and enabling the project, prompt the
-operator with:
+After registering a Qwen worker and enabling the project, give your operator the
+workflow above and a task such as:
 
 ```text
-$overseer Split this feature into three independent assignments using the
-codex-local Qwen worker. Review each result, request corrections where needed,
-and verify the integrated changes.
+Use Overseer to split this feature into three independent assignments using the
+project's configured Qwen worker. Review each result, request corrections where
+needed, and verify the integrated changes.
 ```
 
-The operator collects reports and diffs through CLI commands in the same Codex
-conversation, then reviews and applies the changes. These jobs do not appear in
-Codex's native subagents panel. Independent jobs may be submitted together. If
-one assignment needs another's changes, integrate the prerequisite before
+The operator collects reports and diffs through CLI commands in its own
+conversation, then reviews and applies the changes. Independent jobs may be
+submitted together. If one assignment needs another's changes, integrate the prerequisite before
 submitting the dependent job so it starts from the updated project.
 
 ## Mix harnesses in one project
@@ -279,7 +308,8 @@ overseer enable --update   # Refresh project skill; preserve worker and mode
 overseer disable           # Finish/cancel active jobs first; retain saved work
 ```
 
-For a persistent terminal: `tmux new-session -s overseer`, then open Codex inside.
+For a persistent terminal: `tmux new-session -s overseer`, then open your operator
+harness inside.
 Reconnect with `tmux attach -t overseer`. Workers persist independently of tmux.
 
 ## Configuration and privacy
