@@ -2,19 +2,19 @@
 
 | Symptom | What to check |
 | --- | --- |
-| `foundry` is not found | Put the install prefix's `bin` directory on PATH. |
+| `overseer` is not found | Put the install prefix's `bin` directory on PATH. |
 | Installer refuses a command link | Use a separate prefix for a preview, or `--force` only to intentionally replace that link. The installer prechecks all links before copying. |
 | Unknown worker | Register it with `configure --worker NAME`, then select it with `enable --worker NAME` or `submit --worker NAME`. |
 | Pi workspace sandbox error | Pi requires explicit `enable --sandbox danger-full-access`; choose Codex if you require its workspace sandbox. |
 | Pi fails before inference | Check `api`, `baseUrl`, provider, and model ID in the custom models file; the returned identity must match. |
 | Pi authentication missing | Its private home does not import interactive login credentials. Use an environment key reference in the selected provider config. |
 | Follow-up keeps an old model | Expected: jobs freeze configuration and permissions. Submit a new job to use a changed worker. |
-| No workers or a missing executable | Run `foundry setup`, then `foundry workers`; install the chosen harness separately or use `--binary PATH`. |
+| No workers or a missing executable | Run `overseer setup`, then `overseer workers`; install the chosen harness separately or use `--binary PATH`. |
 | Claude repeats authentication errors | Check its Messages endpoint and `--api-key-env NAME`. For bearer-auth servers, use `--auth-mode bearer`. |
 | Claude reports an unsupported reasoning effort | The adapter uses `medium`; verify the endpoint accepts that effort and supports Anthropic request fields. |
 | OpenCode prints text but job fails | Inspect its error records and process exit; a report alone is insufficient. Check standalone mode and provider setup. |
-| Missing worker profile | Run `foundry configure --profile /absolute/path/to/profile.config.toml`. |
-| Project is not enabled | Run `foundry enable` in that Git project, then open a fresh Codex session to discover `$spark-workers`. |
+| Missing worker profile | Run `overseer configure --profile /absolute/path/to/profile.config.toml`. |
+| Project is not enabled | Run `overseer enable` in that Git project, then open a fresh Codex session to discover `$overseer`. |
 | No initial commit | Commit the project's initial files before submitting a worker task. |
 | Health check fails | Start the local backend and adapter; inspect configured ports. Set `configure --health-url URL`, or `--health-url ''` if the server has no health route. |
 | HTTP 404 on `/v1/responses` | The backend may only implement Chat Completions. The adapter does not add a Responses implementation. |
@@ -28,9 +28,9 @@
 | Task is orphaned after a crash/reboot | Inspect logs, then use `followup` to resume the saved thread/worktree. Supervisors do not automatically restart after reboot. |
 | Patch application conflicts | Original files changed since the snapshot or another task overlaps. Inspect the diff and integrate deliberately; do not force an overwrite. |
 | Newly installed dependency is missing | Ignored environments and dependencies are not copied into worktrees. Give the worker appropriate setup instructions or have the operator arrange the environment. |
-| `$spark-workers` is absent from normal prompt metadata | Expected: implicit invocation is disabled. It should be available in the skill selector in enabled projects. |
+| `$overseer` is absent from normal prompt metadata | Expected: implicit invocation is disabled. It should be available in the skill selector in enabled projects. |
 
-Use `foundry result JOB_ID --project /path/to/project` to find `report.txt`,
+Use `overseer result JOB_ID --project /path/to/project` to find `report.txt`,
 `events.jsonl`, `progress.jsonl`, `app-server.log`, and the private worktree. Review the terminal
 status as well as the report: completed model output is not proof that tests
 passed or that every acceptance criterion was met.

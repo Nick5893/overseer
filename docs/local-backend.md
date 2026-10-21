@@ -14,7 +14,7 @@ Copy [the Pi model example](../examples/pi-models.json) into a private location,
 then change its URL, model ID, and context limit to match your backend:
 
 ```sh
-foundry configure --worker pi-local --harness pi \
+overseer configure --worker pi-local --harness pi \
   --models /absolute/path/to/models.json --provider local --model local-worker
 ```
 
@@ -27,7 +27,7 @@ remain executable code and should be trusted. See the official
 [Pi model configuration](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/models.md).
 
 Pi workers require explicit full-access project permissions. They use the direct
-provider protocol and do not require `foundry-adapter` or `foundry-catalog`.
+provider protocol and do not require `overseer-adapter` or `overseer-catalog`.
 
 ## What the Codex endpoint must support
 
@@ -37,7 +37,7 @@ call arguments, tool-result continuation, and the context size you advertise.
 Serving a model that answers text through `/v1/chat/completions` does not establish
 compatibility with this harness.
 
-Frontier Foundry deliberately does not download model weights or install a model
+Overseer deliberately does not download model weights or install a model
 server. Start your existing vLLM or other compatible serving stack according to
 that stack's documentation. Use a coding/tool-capable local model and its actual
 chat/tool/reasoning configuration. The profile's `model` must equal an alias the
@@ -52,7 +52,7 @@ Codex worker harness -> adapter 127.0.0.1:18991 -> server 127.0.0.1:18888
 Run the adapter with:
 
 ```sh
-foundry-adapter --port 18991 --upstream-port 18888
+overseer-adapter --port 18991 --upstream-port 18888
 ```
 
 Its listener and upstream both use loopback. Keep it local, or use an appropriate
@@ -77,7 +77,7 @@ directly at its Responses base URL and omit the adapter. To generate a direct
 profile:
 
 ```sh
-foundry-catalog --model local-worker --context-window 65536 \
+overseer-catalog --model local-worker --context-window 65536 \
   --base-url http://127.0.0.1:18888/v1 \
   --output /path/to/new-models.json \
   --profile-output /path/to/new-worker.config.toml
@@ -86,7 +86,7 @@ foundry-catalog --model local-worker --context-window 65536 \
 ## Reuse an existing working local profile
 
 ```sh
-foundry configure --profile /path/to/your/spark.config.toml
+overseer configure --profile /path/to/your/spark.config.toml
 ```
 
 Existing command-backed provider authentication can remain in that profile. It
@@ -109,7 +109,7 @@ operator's own Codex authentication remains separate.
 
 ## Catalogs and context
 
-`foundry-catalog` uses `codex debug models --bundled`, taking harness instructions
+`overseer-catalog` uses `codex debug models --bundled`, taking harness instructions
 and metadata from the installed Codex version and generating a local alias. It
 does not query an OpenAI model or copy this machine's personal catalog. The
 generated profile defaults to a `medium` reasoning setting; adapt it to what your
@@ -130,20 +130,20 @@ If generation or thread startup fails on another version, check that version's
 Use a disposable project before a substantial assignment:
 
 ```sh
-mkdir /tmp/foundry-smoke
-cd /tmp/foundry-smoke
+mkdir /tmp/overseer-smoke
+cd /tmp/overseer-smoke
 git init
-printf '# Foundry smoke test\n' > README.md
+printf '# Overseer smoke test\n' > README.md
 git add README.md
 git commit -m 'Initialize smoke test'
-foundry enable
-foundry doctor
-foundry run "Create add.py with an add(a, b) function and a small unittest. Run the test, review the worker diff, and apply the verified change."
+overseer enable
+overseer doctor
+overseer run "Create add.py with an add(a, b) function and a small unittest. Run the test, review the worker diff, and apply the verified change."
 ```
 
 This requires your ordinary Git identity and an authenticated frontier operator.
 It performs real inference on both the operator and local worker models. If the
 host cannot run Codex's sandbox, make the explicit worker/operator permission
 choices described in the main README first; the bridge will not silently change
-them. Check `foundry result JOB_ID` and the actual files/tests rather than treating
+them. Check `overseer result JOB_ID` and the actual files/tests rather than treating
 an endpoint health response as a successful integration test.

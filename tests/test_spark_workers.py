@@ -5,6 +5,7 @@ import io
 import json
 import os
 from pathlib import Path
+import shutil
 import tempfile
 from types import SimpleNamespace
 import unittest
@@ -64,6 +65,9 @@ class ProjectTests(RepoFixture):
         self.enable()
         self.assertEqual(sw.project(self.root), self.root)
         self.assertIn("allow_implicit_invocation: false", (self.root / sw.SKILL / "agents/openai.yaml").read_text())
+        self.assertTrue((self.root / sw.SKILL / "assets/overseer.jpg").is_file())
+        self.assertIn("name: spark-workers", (self.root / sw.LEGACY_SKILL / "SKILL.md").read_text())
+        self.assertIn("allow_implicit_invocation: false", (self.root / sw.LEGACY_SKILL / "agents/openai.yaml").read_text())
         self.assertFalse((self.root / ".codex/config.toml").exists())
         other = Path(self.temp.name) / "other"
         other.mkdir()
@@ -82,6 +86,26 @@ class ProjectTests(RepoFixture):
         with self.assertRaises(sw.Error):
             self.enable()
         self.assertEqual((skill / "SKILL.md").read_text(), "Existing custom skill")
+
+    def test_upgrade_does_not_overwrite_unrelated_overseer_skill(self):
+        self.enable()
+        marker = self.root / sw.MARKER
+        config = json.loads(marker.read_text())
+        config.pop("skills")
+        sw.atomic_json(marker, config)
+        custom = self.root / sw.SKILL / "SKILL.md"
+        custom.write_text("Unrelated existing Overseer skill")
+        with self.assertRaisesRegex(sw.Error, "unrelated skill"):
+            sw.command_enable(SimpleNamespace(project=str(self.root), update=True, sandbox=None))
+        self.assertEqual(custom.read_text(), "Unrelated existing Overseer skill")
+
+    def test_old_project_can_launch_with_legacy_skill_until_refreshed(self):
+        self.enable()
+        shutil.rmtree(self.root / sw.SKILL)
+        args = SimpleNamespace(project=str(self.root), prompt="implement the task", prompt_file=None, full_access=False)
+        with patch.object(sw.os, "chdir"), patch.object(sw.os, "execv") as execute:
+            sw.command_run(args)
+        self.assertEqual(execute.call_args.args[1][-1], "$spark-workers implement the task")
 
     def test_skill_updates_preserve_project_permission_choice(self):
         with contextlib.redirect_stdout(io.StringIO()):
@@ -121,7 +145,7 @@ class ProjectTests(RepoFixture):
             normal = execute.call_args.args[1]
             self.assertNotIn("--sandbox", normal)
             self.assertNotIn("--model", normal)
-            self.assertEqual(normal[-1], "$spark-workers implement the task")
+            self.assertEqual(normal[-1], "$overseer implement the task")
             args.full_access = True
             sw.command_run(args)
             full = execute.call_args.args[1]

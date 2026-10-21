@@ -48,7 +48,7 @@ def main():
     print(f"Evidence: {base}", flush=True)
     prefix = base / "install prefix"
     install(prefix)
-    binary = prefix / "bin/foundry"
+    binary = prefix / "bin/overseer"
     project = base / "project"
     project.mkdir()
     env = os.environ.copy()

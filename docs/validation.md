@@ -11,7 +11,7 @@ python3 -m unittest discover -s tests -v
 ```
 
 ```text
-Ran 51 tests
+Ran 53 tests
 OK
 ```
 
@@ -24,6 +24,7 @@ They need no GPU, model weights, network connection, or provider credentials.
 | Installed Pi path | Clean prefix with spaces, edit, same-session follow-up, report, tool output, apply |
 | Additional installed harnesses | OMP, OpenCode, and Claude edit/resume/apply; native error and exit checks, cancellation and timeout |
 | CLI setup | Wizard flow, credential environment isolation, all-harness discovery, side-by-side install preserving old Spark command |
+| Rename compatibility | Overseer and legacy CLI aliases share saved jobs; explicit skill aliases, existing-project launch, and unrelated-skill overwrite protection |
 | Working directory | Deliberately stale operator `PWD` replaced with actual worktree directory for every child |
 | Configuration | Register both harnesses, retain Codex default, preserve Pi registration; freeze job settings across source/config changes |
 | Permissions | Reject Pi in workspace-write before creating a worktree; no automatic full-access fallback |
@@ -65,7 +66,7 @@ the model recovered by editing through its command tool and completed the checks
 This is a reminder to validate the specific model/profile/server combination;
 a passing bridge suite does not establish compatibility of every tool shape.
 
-A separate terminal-level test also drove `foundry setup` through a real PTY and
+A separate terminal-level test also drove `overseer setup` through a real PTY and
 verified its generated worker configuration. It did not enable a project.
 
 ## Repeat a live check

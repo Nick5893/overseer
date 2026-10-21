@@ -73,7 +73,7 @@ def main():
         parser.exit(1, f"Catalog generation failed: {type(exc).__name__}\n")
     print(f"Generated {destination}; set model_catalog_json to that absolute path in your worker profile.")
     if profile_path:
-        print(f"Generated {profile_path}; next: foundry configure --profile {profile_path}")
+        print(f"Generated {profile_path}; next: overseer configure --profile {profile_path}")
 
 
 if __name__ == "__main__":

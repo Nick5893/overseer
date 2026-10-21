@@ -1,8 +1,8 @@
 # Harness support
 
 The operator remains Codex. `--harness` selects the implementation worker's tool
-runtime; `--model` selects its model. Jobs still return through `foundry result`
-and `foundry diff`, regardless of harness. No MCP transport or agent SDK is needed
+runtime; `--model` selects its model. Jobs still return through `overseer result`
+and `overseer diff`, regardless of harness. No MCP transport or agent SDK is needed
 by the bridge.
 
 | Harness | Transport | Completion boundary | Resume reference |
@@ -21,41 +21,41 @@ while tools in full-access processes can reach the host outside the worktree.
 ## Configure and select
 
 ```sh
-foundry setup
-foundry workers
+overseer setup
+overseer workers
 
 # Or configure directly; install each harness separately.
-foundry configure --harness omp --worker omp-local \
+overseer configure --harness omp --worker omp-local \
   --base-url http://127.0.0.1:18888/v1 --model local-worker
-foundry configure --harness opencode --worker code-local \
+overseer configure --harness opencode --worker code-local \
   --base-url http://127.0.0.1:18888/v1 --model local-worker
-foundry configure --harness claude --worker claude-local \
+overseer configure --harness claude --worker claude-local \
   --base-url http://127.0.0.1:18888 --model local-worker
 
 # Inside your project:
-foundry enable --worker code-local --sandbox danger-full-access
-foundry doctor
-foundry run "Implement and verify the feature"
+overseer enable --worker code-local --sandbox danger-full-access
+overseer doctor
+overseer run "Implement and verify the feature"
 ```
 
 Add `--api-key-env NAME` for authentication and provide that environment variable
-when invoking Foundry. Secrets are resolved in the child environment, not placed
+when invoking Overseer. Secrets are resolved in the child environment, not placed
 in command arguments or the worker registry. Private native configuration files
 can still contain credential references or, when you supply an existing models
 file, its literal credentials. Keep task state private.
 
 Use `--binary PATH` when an executable is not on PATH. A missing harness can be
 registered before installation; `workers` and `doctor` report its availability.
-The interactive wizard writes only Foundry configuration. Project opt-in remains
+The interactive wizard writes only Overseer configuration. Project opt-in remains
 a separate explicit command, and ordinary Codex delegation remains unchanged.
 
 ## OMP / Oh My Pi
 
 OMP is Pi-derived, but its current protocol is different. Pi's `agent_settled`
-does not complete an OMP job. Foundry correlates `prompt_result` with the prompt
+does not complete an OMP job. Overseer correlates `prompt_result` with the prompt
 ID and waits for any background work to settle before closing the harness.
 
-OMP workers use a private agent directory. Foundry writes the selected provider
+OMP workers use a private agent directory. Overseer writes the selected provider
 as JSON-compatible YAML in `models.yml`; no Python YAML dependency is needed.
 `--models FILE` accepts a JSON provider definition like the Pi example, or
 `--base-url` generates one. General YAML import is not supported by the bridge.
@@ -66,7 +66,7 @@ configured worker model; native task/subagent tools are not exposed.
 
 ## OpenCode
 
-Foundry uses standalone mode so worker configuration and credentials do not flow
+Overseer uses standalone mode so worker configuration and credentials do not flow
 through an existing background service. A dedicated primary agent receives the
 worker instructions. Its provider, main model, and small model are explicit;
 permissions deny delegation, interactive questions, and unrelated tools.
@@ -87,7 +87,7 @@ CLI stream does not provide the same pre-inference identity handshake as Codex.
 ## Claude Code
 
 Claude workers require a Messages API endpoint. A Chat Completions-only endpoint
-will not work, and Foundry does not implement a protocol translation gateway.
+will not work, and Overseer does not implement a protocol translation gateway.
 Use a full model ID accepted by the endpoint, rather than an alias that silently
 resolves to another model. Claude's reported model and session must match the job.
 

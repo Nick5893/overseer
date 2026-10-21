@@ -96,7 +96,7 @@ class ExtraHarnessTests(unittest.TestCase):
         self.folder = Path(self.temp.name)
         self.prefix = self.folder / "installed prefix"
         installer.install(self.prefix)
-        self.binary = self.prefix / "bin/foundry"
+        self.binary = self.prefix / "bin/overseer"
         self.project = self.folder / "project"
         self.project.mkdir()
         subprocess.run(["git", "init", "-q", str(self.project)], check=True)
@@ -207,7 +207,7 @@ class ExtraHarnessTests(unittest.TestCase):
         legacy.write_text("existing live Spark installation")
         installer.install(prefix, legacy_alias=False)
         self.assertEqual(legacy.read_text(), "existing live Spark installation")
-        self.assertTrue((prefix / "bin/foundry").is_symlink())
+        self.assertTrue((prefix / "bin/overseer").is_symlink())
 
 
 class WizardAndOmpContractTests(unittest.TestCase):

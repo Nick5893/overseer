@@ -13,7 +13,7 @@ class CodexWorker:
     def start(self, instructions):
         rpc, task = self.rpc, self.task
         spec = task["worker_config"]
-        rpc.call("initialize", {"clientInfo": {"name": "frontier_foundry", "version": "0.2.0"},
+        rpc.call("initialize", {"clientInfo": {"name": "overseer", "version": "0.4.0"},
                                 "capabilities": {"experimentalApi": True}}, timeout=30)
         rpc.send("initialized", request=False)
         params = {"model": spec["model"], "modelProvider": spec["provider"],

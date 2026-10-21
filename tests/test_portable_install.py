@@ -35,7 +35,7 @@ class PortableTests(unittest.TestCase):
                 installer.install(prefix)
             self.assertEqual(foreign.read_text(), "an unrelated existing command\n")
             self.assertFalse((prefix / "share/frontier-foundry").exists())
-            self.assertFalse((prefix / "bin/foundry").exists())
+            self.assertFalse((prefix / "bin/overseer").exists())
 
     def test_generated_catalog_uses_local_alias_without_mutating_input(self):
         bundled = {"models": [{"slug": "bundled", "context_window": 100000,
@@ -67,8 +67,8 @@ class PortableTests(unittest.TestCase):
             prefix = folder / "install prefix"
             installer.install(prefix)
             installer.install(prefix)  # Upgrading owned links is idempotent.
-            self.assertTrue((prefix / "bin/foundry").is_symlink())
-            binary = prefix / "bin/foundry"
+            self.assertTrue((prefix / "bin/overseer").is_symlink())
+            binary = prefix / "bin/overseer"
             fake_codex = folder / "fake-codex"
             fake_codex.write_text('''#!/usr/bin/env python3
 import json
@@ -118,7 +118,7 @@ for line in sys.stdin:
             original_config = b'model = "frontier-operator"\n'
             (operator_home / "config.toml").write_bytes(original_config)
             profile = folder / "worker.config.toml"
-            subprocess.run([str(prefix / "bin/foundry-catalog"), "--codex", str(fake_codex),
+            subprocess.run([str(prefix / "bin/overseer-catalog"), "--codex", str(fake_codex),
                             "--model", "tiny-local-model", "--context-window", "32768",
                             "--output", str(folder / "catalog.json"), "--profile-output", str(profile)],
                            env=env, capture_output=True, text=True, check=True, timeout=15)
@@ -149,6 +149,15 @@ for line in sys.stdin:
             first_thread = task["thread_id"]
             result = cli("result", task_id)
             self.assertIn("Worker created", result["report"])
+            renamed_env = dict(env, OVERSEER_CONFIG=env["SPARK_WORKERS_CONFIG"],
+                               OVERSEER_STATE_DIR=env["SPARK_WORKERS_STATE_DIR"],
+                               SPARK_WORKERS_CONFIG=str(folder / "wrong-config.toml"),
+                               SPARK_WORKERS_STATE_DIR=str(folder / "wrong-state"))
+            for alias in ("foundry", "spark-workers"):
+                legacy = subprocess.run([str(prefix / "bin" / alias), "result", task_id],
+                                        cwd=project, env=renamed_env, capture_output=True, text=True, timeout=15)
+                self.assertEqual(legacy.returncode, 0, legacy.stderr)
+                self.assertEqual(json.loads(legacy.stdout)["id"], task_id)
             self.assertEqual(result["model"], "tiny-local-model")
             self.assertEqual(result["provider"], "local_worker")
             self.assertFalse((project / "implementation.txt").exists())

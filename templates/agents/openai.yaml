@@ -1,6 +1,9 @@
 interface:
-  display_name: "Foundry Workers"
+  display_name: "Overseer"
   short_description: "Delegate explicit tasks to configured coding workers"
-  default_prompt: "Use $spark-workers to plan this task, delegate implementation to the configured local worker, and review and verify the result."
+  default_prompt: "Use $overseer to plan this task, delegate implementation to the configured local worker, and review and verify the result."
+  icon_small: "./assets/overseer.jpg"
+  icon_large: "./assets/overseer.jpg"
+  brand_color: "#3276A7"
 policy:
   allow_implicit_invocation: false

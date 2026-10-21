@@ -1,8 +1,12 @@
-# Frontier Foundry
+# Overseer
+
+<p align="center">
+  <img src="assets/overseer.jpg" width="420" alt="Overseer — Vault Boy giving a thumbs-up" />
+</p>
 
 **Frontier models plan and review. Local models write and test the code.**
 
-Frontier Foundry lets a Codex operator delegate implementation to a local model
+Overseer lets a Codex operator delegate implementation to a local model
 running in **Codex, Pi, OMP, OpenCode, or Claude Code**, then bring its report and
 code changes back into the same operator session. Pick the harness that works
 with your model server.
@@ -13,7 +17,7 @@ message broker, or extra daemon is required by the bridge.
 ```mermaid
 flowchart LR
     U[Your prompt] --> O[Codex operator\nfrontier model]
-    O -->|assignment| F[Foundry CLI]
+    O -->|assignment| F[Overseer CLI]
     F --> H[Selected worker harness]
     H --> L[Configured model endpoint]
     H --> W[Isolated Git worktree · read / edit / test]
@@ -22,7 +26,7 @@ flowchart LR
     O -->|reviewed apply| G[Your project]
 ```
 
-- **Opt in per project.** Invoke `$spark-workers` explicitly; ordinary Codex
+- **Opt in per project.** Invoke `$overseer` explicitly; ordinary Codex
   prompts and native subagents keep their normal behavior.
 - **Mix worker harnesses.** Use a project default or select a worker per job.
 - **Keep work reviewable.** Each job has a private worktree, report, event logs,
@@ -46,41 +50,54 @@ flowchart LR
 
 The tested baseline is **Codex 0.163.0, Pi 1.1.0, OMP 18.12.4, OpenCode 2.0.16,
 and Claude Code 2.1.304 on Linux ARM64**. Harness
-protocols change; rerun a small live task after upgrading. Foundry does not
+protocols change; rerun a small live task after upgrading. Overseer does not
 install model weights, serve models, or translate Chat Completions into Responses.
 
 ## Install
 
 ```sh
-gh repo clone Nick5893/frontier-foundry
-cd frontier-foundry
+gh repo clone Nick5893/overseer
+cd overseer
 python3 install.py
 export PATH="$HOME/.local/bin:$PATH"
-foundry --version
+overseer --version
 ```
 
 Repository access is required while this repo is private. Installation creates
-`foundry`, its compatibility alias `spark-workers`, and the optional Codex helpers
-`foundry-adapter` and `foundry-catalog`. It leaves global Codex configuration,
+`overseer`, the optional Codex helpers `overseer-adapter` and `overseer-catalog`,
+and compatibility commands `foundry`, `foundry-adapter`, `foundry-catalog`, and
+`spark-workers`. It leaves global Codex configuration,
 other projects, and shell startup files alone.
 
 To keep an existing `spark-workers` command, install with
-`python3 install.py --no-legacy-alias`. New project skills call `foundry`; the old
+`python3 install.py --no-legacy-alias`. New project skills call `overseer`; the old
 Spark command can continue serving existing sessions.
 
 For a preview alongside another installation, use
-`python3 install.py --prefix /path/to/preview` and that prefix's `bin/foundry`.
+`python3 install.py --prefix /path/to/preview` and that prefix's `bin/overseer`.
 Conflicting commands are refused unless you explicitly pass `--force`.
+
+## Upgrading from Frontier Foundry
+
+The project and primary command are now **Overseer**. Existing `foundry` commands
+remain aliases. Existing configuration, task state, and opt-in markers retain
+their original directory names so the rename preserves saved workers and jobs.
+The checkout directory can keep its old name.
+
+`$overseer` is the new explicit project skill; `$spark-workers` remains an alias.
+Refresh an enabled project's skills with `overseer enable --update`. Older
+projects can still launch through their existing skill until refreshed. Global
+Codex settings and native delegation stay unchanged.
 
 ## Configure from the CLI
 
 ```sh
-foundry setup             # Interactive: choose harness, endpoint, model, credentials
-foundry workers           # List workers and executable availability
-foundry configure --help  # Scriptable configuration options
+overseer setup             # Interactive: choose harness, endpoint, model, credentials
+overseer workers           # List workers and executable availability
+overseer configure --help  # Scriptable configuration options
 ```
 
-`setup` registers a worker in Foundry's private configuration. It does not install
+`setup` registers a worker in Overseer's private configuration. It does not install
 a harness, enable a project, or change Codex defaults. Install the harness you
 choose separately, or pass its executable with `--binary PATH`. Credential prompts
 ask for an environment variable **name**, never a secret value.
@@ -89,19 +106,19 @@ For a local Chat Completions server, the same short configuration works with
 Pi, OMP, or OpenCode:
 
 ```sh
-foundry configure --harness opencode --worker code-local \
+overseer configure --harness opencode --worker code-local \
   --base-url http://127.0.0.1:18888/v1 --model local-worker
 ```
 
 Use `--harness pi` or `--harness omp` to choose another harness. For an authenticated
 endpoint, add `--api-key-env LOCAL_MODEL_API_KEY` and provide that variable in the
-shell that starts Foundry. For Pi/OMP/OpenCode, `--context-window` and
+shell that starts Overseer. For Pi/OMP/OpenCode, `--context-window` and
 `--max-tokens` default to 32768 and 4096; set them to limits your server supports.
 
 Claude Code requires an Anthropic-compatible Messages endpoint:
 
 ```sh
-foundry configure --harness claude --worker claude-local \
+overseer configure --harness claude --worker claude-local \
   --base-url http://127.0.0.1:18888 --model local-worker \
   --api-key-env LOCAL_MODEL_API_KEY --auth-mode bearer
 ```
@@ -116,7 +133,7 @@ validate the model/API combination with the live smoke test.
 
 ## Quick start
 
-### 1. Register a worker (or use `foundry setup`)
+### 1. Register a worker (or use `overseer setup`)
 
 **Pi + a Chat Completions endpoint**
 
@@ -124,7 +141,7 @@ Create a private `models.json` using [examples/pi-models.json](examples/pi-model
 Set its base URL and model ID to values accepted by your server. Then register it:
 
 ```sh
-foundry configure --worker pi-local --harness pi \
+overseer configure --worker pi-local --harness pi \
   --models /absolute/path/to/models.json \
   --provider local --model local-worker
 ```
@@ -139,7 +156,7 @@ the Codex tool adapter is unnecessary on this path.
 **Codex + an existing local Responses profile**
 
 ```sh
-foundry configure --profile /absolute/path/to/worker.config.toml
+overseer configure --profile /absolute/path/to/worker.config.toml
 ```
 
 This registers `codex-local`, the default worker when no project choice is saved.
@@ -152,27 +169,27 @@ catalog generation and the optional freeform/namespaced tool adapter.
 cd /path/to/your/git-project
 
 # Choose one:
-foundry enable --worker codex-local
-foundry enable --worker pi-local --sandbox danger-full-access
+overseer enable --worker codex-local
+overseer enable --worker pi-local --sandbox danger-full-access
 
-foundry doctor
+overseer doctor
 ```
 
 Pi, OMP, OpenCode, and Claude Code require the explicit full-access selection.
 This bridge does not provide Codex-equivalent workspace sandboxing for them. **A Git worktree isolates changes
 for review; it is not a security sandbox.** Full-access tools can read and write
-outside the worktree. Foundry never downgrades `workspace-write` to full access.
+outside the worktree. Overseer never downgrades `workspace-write` to full access.
 
 ### 3. Open Codex and give it work
 
 ```sh
-foundry run "Implement CSV export for the report command and verify it."
+overseer run "Implement CSV export for the report command and verify it."
 ```
 
 Or open a fresh normal Codex session in the enabled project and type:
 
 ```text
-$spark-workers Implement CSV export for the report command and verify it.
+$overseer Implement CSV export for the report command and verify it.
 ```
 
 The operator reads the project, plans, submits implementation assignments,
@@ -181,7 +198,7 @@ Worker reports and diffs appear as CLI tool results in Codex; these external job
 do not appear as native Codex subagents and do not push unsolicited completion
 messages into the conversation.
 
-`foundry run` preserves the operator's usual model and permissions. Use
+`overseer run` preserves the operator's usual model and permissions. Use
 `--model MODEL_ID` to select an operator model, or `--full-access` when you
 explicitly want full access for that operator session as well. Worker and
 operator permissions are separate choices.
@@ -191,8 +208,8 @@ operator permissions are separate choices.
 Register both workers, then select one per assignment:
 
 ```sh
-foundry submit --worker pi-local --name implement --prompt-file /tmp/task.md
-foundry submit --worker codex-local --name investigate --prompt-file /tmp/check.md
+overseer submit --worker pi-local --name implement --prompt-file /tmp/task.md
+overseer submit --worker codex-local --name investigate --prompt-file /tmp/check.md
 ```
 
 You can use `--worker` with any registered harness, including OMP, OpenCode, and
@@ -204,19 +221,19 @@ A submitted job freezes its harness, binary path, model configuration, and
 permission mode. Follow-ups keep that worker, conversation, and worktree even if
 you change the registered default later. Executable upgrades, external auth
 helpers, environment credentials, and referenced catalog files remain external
-dependencies; Foundry does not vendor or lock their contents.
+dependencies; Overseer does not vendor or lock their contents.
 
 ## Inspect, correct, and apply
 
 ```sh
-foundry status
-foundry wait JOB_ID --seconds 30
-foundry result JOB_ID
-foundry diff JOB_ID --stat
-foundry diff JOB_ID
-foundry followup JOB_ID --prompt-file /tmp/correction.md
-foundry apply JOB_ID
-foundry cancel JOB_ID
+overseer status
+overseer wait JOB_ID --seconds 30
+overseer result JOB_ID
+overseer diff JOB_ID --stat
+overseer diff JOB_ID
+overseer followup JOB_ID --prompt-file /tmp/correction.md
+overseer apply JOB_ID
+overseer cancel JOB_ID
 ```
 
 `submit` also accepts text or `--prompt-file -` for stdin. Commands accept
@@ -231,16 +248,16 @@ without staging. Review first and run acceptance checks afterward: a completed
 model turn is not proof of correct code. Applied jobs cannot be followed up.
 
 ```sh
-foundry enable --update   # Refresh project skill; preserve worker and mode
-foundry disable           # Finish/cancel active jobs first; retain saved work
+overseer enable --update   # Refresh project skill; preserve worker and mode
+overseer disable           # Finish/cancel active jobs first; retain saved work
 ```
 
-For a persistent terminal: `tmux new-session -s foundry`, then open Codex inside.
-Reconnect with `tmux attach -t foundry`. Workers persist independently of tmux.
+For a persistent terminal: `tmux new-session -s overseer`, then open Codex inside.
+Reconnect with `tmux attach -t overseer`. Workers persist independently of tmux.
 
 ## Configuration and privacy
 
-Foundry writes its own settings to `~/.config/frontier-foundry/config.toml`:
+Overseer writes its own settings to `~/.config/frontier-foundry/config.toml`:
 
 ```toml
 [workers.codex-local]
@@ -261,11 +278,11 @@ executable. `configure --health-url ''` disables the optional health request for
 a worker without that route. `doctor --worker NAME` checks an alternate worker;
 health does not establish inference or tool compatibility.
 
-Existing single-worker settings and jobs remain compatible. Environment
-variables `SPARK_WORKERS_CONFIG`, `SPARK_WORKERS_STATE_DIR`,
-`SPARK_WORKERS_PROFILE`, and `SPARK_WORKERS_CODEX` remain supported; the latter
-two select the default Codex worker. Native delegation and global skills are
-unchanged. `$spark-workers` retains its name for compatibility.
+Existing single-worker settings and jobs remain compatible. Environment overrides
+are `OVERSEER_CONFIG`, `OVERSEER_STATE_DIR`, `OVERSEER_PROFILE`, and
+`OVERSEER_CODEX`. The corresponding `SPARK_WORKERS_*` names remain supported;
+Overseer names take precedence. Profile and Codex executable overrides select the
+default Codex worker. Native delegation and global skills stay unchanged.
 
 Assignments, private configuration copies, sessions, tool outputs, and logs live
 under `~/.local/state/spark-workers`. Keep them private. Prefer environment
@@ -298,3 +315,5 @@ for the live model smoke test and [contributing](CONTRIBUTING.md) for developmen
 - [Troubleshooting](docs/troubleshooting.md)
 - [Codex app-server protocol](https://learn.chatgpt.com/docs/app-server)
 - [Pi RPC protocol](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/rpc.md)
+
+Logo: supplied [Vault Boy artwork](assets/README.md).

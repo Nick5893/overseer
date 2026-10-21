@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install Frontier Foundry using Python's standard library only."""
+"""Install Overseer using Python's standard library only."""
 import argparse
 from pathlib import Path
 import shutil
@@ -12,8 +12,10 @@ def install(prefix, *, force=False, legacy_alias=True):
     destination = prefix / "share/frontier-foundry"
     binaries = prefix / "bin"
     files = ["spark_workers.py", "worker_harnesses.py", "spark_proxy.py", "make_model_catalog.py",
-             "templates/SKILL.md", "templates/agents/openai.yaml"]
-    links = {"foundry": "spark_workers.py", "spark-workers": "spark_workers.py",
+             "templates/SKILL.md", "templates/agents/openai.yaml", "assets/overseer.jpg"]
+    links = {"overseer": "spark_workers.py", "overseer-adapter": "spark_proxy.py",
+             "overseer-catalog": "make_model_catalog.py",
+             "foundry": "spark_workers.py", "spark-workers": "spark_workers.py",
              "foundry-adapter": "spark_proxy.py", "foundry-catalog": "make_model_catalog.py"}
     if not legacy_alias:
         links.pop("spark-workers")
@@ -42,18 +44,20 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--prefix", type=Path, default=Path.home() / ".local")
     parser.add_argument("--force", action="store_true", help="Explicitly replace conflicting command symlinks")
-    parser.add_argument("--no-legacy-alias", action="store_true", help="Install foundry without replacing an existing spark-workers command")
+    parser.add_argument("--no-legacy-alias", action="store_true", help="Install Overseer without replacing an existing spark-workers command")
     args = parser.parse_args()
     if sys.version_info < (3, 11) or not sys.platform.startswith("linux"):
-        parser.error("Frontier Foundry currently supports Linux with Python 3.11 or newer.")
+        parser.error("Overseer currently supports Linux with Python 3.11 or newer.")
     try:
         destination = install(args.prefix.expanduser().resolve(), force=args.force, legacy_alias=not args.no_legacy_alias)
     except (OSError, RuntimeError) as exc:
         parser.exit(1, f"Install failed: {exc}\n")
-    print(f"Installed Frontier Foundry at {destination}")
-    names = "foundry,foundry-adapter,foundry-catalog" if args.no_legacy_alias else "foundry,spark-workers,foundry-adapter,foundry-catalog"
+    print(f"Installed Overseer at {destination}")
+    names = "overseer,overseer-adapter,overseer-catalog,foundry,foundry-adapter,foundry-catalog"
+    if not args.no_legacy_alias:
+        names += ",spark-workers"
     print(f"Commands: {args.prefix.expanduser() / 'bin'}/{{{names}}}")
-    print("Put that bin directory on PATH. Next: foundry setup (interactive) or foundry configure --help")
+    print("Put that bin directory on PATH. Next: overseer setup (interactive) or overseer configure --help")
 
 
 if __name__ == "__main__":

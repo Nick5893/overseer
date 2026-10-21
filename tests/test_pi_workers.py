@@ -113,7 +113,7 @@ class PiInstalledTests(unittest.TestCase):
         self.folder = Path(self.temp.name)
         prefix = self.folder / "install prefix"
         installer.install(prefix)
-        self.binary = prefix / "bin/foundry"
+        self.binary = prefix / "bin/overseer"
         self.fake = self.folder / "fake pi"
         self.fake.write_text(FAKE_PI)
         self.fake.chmod(0o755)

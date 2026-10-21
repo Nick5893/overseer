@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Frontier Foundry: frontier planning, local execution, explicit project opt-in."""
+"""Overseer: frontier planning, local execution, explicit project opt-in."""
 from __future__ import annotations
 
 import argparse
@@ -26,25 +26,27 @@ import uuid
 from worker_harnesses import Error, CodexWorker, PiWorker, ADAPTERS
 
 APP = Path(__file__).resolve().parent
-CONFIG_FILE = Path(os.environ.get("SPARK_WORKERS_CONFIG", Path.home() / ".config/frontier-foundry/config.toml")).expanduser()
+CONFIG_FILE = Path(os.environ.get("OVERSEER_CONFIG", os.environ.get("SPARK_WORKERS_CONFIG", Path.home() / ".config/frontier-foundry/config.toml"))).expanduser()
 try:
     SETTINGS = tomllib.loads(CONFIG_FILE.read_text()) if CONFIG_FILE.is_file() else {}
 except (OSError, tomllib.TOMLDecodeError) as exc:
-    raise SystemExit(f"Cannot read Frontier Foundry configuration: {type(exc).__name__}")
-STATE = Path(os.environ.get("SPARK_WORKERS_STATE_DIR", SETTINGS.get("state_dir", str(Path.home() / ".local/state/spark-workers")))).expanduser()
-CODEX = Path(os.environ.get("SPARK_WORKERS_CODEX", SETTINGS.get("codex_binary", shutil.which("codex") or str(Path.home() / ".local/bin/codex")))).expanduser()
+    raise SystemExit(f"Cannot read Overseer configuration: {type(exc).__name__}")
+STATE = Path(os.environ.get("OVERSEER_STATE_DIR", os.environ.get("SPARK_WORKERS_STATE_DIR", SETTINGS.get("state_dir", str(Path.home() / ".local/state/spark-workers"))))).expanduser()
+CODEX = Path(os.environ.get("OVERSEER_CODEX", os.environ.get("SPARK_WORKERS_CODEX", SETTINGS.get("codex_binary", shutil.which("codex") or str(Path.home() / ".local/bin/codex"))))).expanduser()
 user_codex_home = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex")).expanduser()
 default_profile = user_codex_home / "spark.config.toml"
 if not default_profile.is_file():
     default_profile = user_codex_home / "local-worker.config.toml"
-PROFILE = Path(os.environ.get("SPARK_WORKERS_PROFILE", SETTINGS.get("worker_profile", str(default_profile)))).expanduser()
+PROFILE = Path(os.environ.get("OVERSEER_PROFILE", os.environ.get("SPARK_WORKERS_PROFILE", SETTINGS.get("worker_profile", str(default_profile))))).expanduser()
 MARKER = Path(".codex/spark-workers.json")
-SKILL = Path(".agents/skills/spark-workers")
+SKILL = Path(".agents/skills/overseer")
+LEGACY_SKILL = Path(".agents/skills/spark-workers")
+SKILL_FILES = ("SKILL.md", "agents/openai.yaml", "assets/overseer.jpg")
 TERMINAL = {"completed", "failed", "cancelled", "orphaned"}
 WORKER_INSTRUCTIONS = """You are a local implementation worker managed by a frontier-model Codex operator.
 Work only on the supplied assignment in your current isolated Git worktree.
 Read applicable AGENTS.md instructions. Implement code and run relevant checks.
-Do not delegate, launch other agents, invoke spark-workers, change the original
+Do not delegate, launch other agents, invoke overseer, foundry, or spark-workers, change the original
 project, or manage live services. Do not commit, reset, clean, or push. Leave all
 edits in the worktree. Avoid unrelated changes. Report changed files, commands
 actually run and their outcomes, and any unresolved issue. If blocked, report the
@@ -56,7 +58,7 @@ edits; a suggested patch in your final answer alone does not complete the task.
 def model_profile(path=None):
     path = Path(path or PROFILE)
     if not path.is_file():
-        raise Error(f"Missing worker profile: {path}. Run foundry configure --profile /path/to/worker.config.toml.")
+        raise Error(f"Missing worker profile: {path}. Run overseer configure --profile /path/to/worker.config.toml.")
     profile = tomllib.loads(path.read_text())
     model, provider = profile.get("model"), profile.get("model_provider")
     spec = profile.get("model_providers", {}).get(provider, {})
@@ -73,7 +75,7 @@ def select_worker(name=None, settings=None):
     spec = dict(settings.get("workers", {}).get(name, {}))
     if not spec:
         if name != "codex-local":
-            raise Error(f"Unknown worker {name!r}. Register it with foundry configure --worker {name}.")
+            raise Error(f"Unknown worker {name!r}. Register it with overseer configure --worker {name}.")
         spec = {"harness": "codex", "profile": str(PROFILE), "binary": str(CODEX)}
         if "health_url" in settings:
             spec["health_url"] = settings["health_url"]
@@ -219,7 +221,7 @@ def project(path=None, *, enabled=True):
     if enabled:
         marker = root / MARKER
         if not marker.is_file():
-            raise Error(f"Spark workers are not enabled for {root}. Run: spark-workers enable")
+            raise Error(f"Spark workers are not enabled for {root}. Run: overseer enable")
         config = json.loads(marker.read_text())
         if config.get("owner") != "spark-workers" or config.get("version") != 1:
             raise Error("Unrecognized Spark worker project configuration.")
@@ -233,7 +235,7 @@ def project_state(root):
 
 def state_path(root, task_id):
     if not re.fullmatch(r"[a-f0-9]{12}", task_id):
-        raise Error("Invalid task ID; use spark-workers status to find it.")
+        raise Error("Invalid task ID; use overseer status to find it.")
     path = project_state(root) / "tasks" / task_id / "task.json"
     if not path.is_file():
         raise Error(f"Task {task_id} does not exist in this project.")
@@ -629,36 +631,53 @@ def patch_for(task):
         (workspace.parent / "diff.index").unlink(missing_ok=True)
 
 
+def skill_template(relative, *, legacy=False):
+    if relative == "assets/overseer.jpg":
+        return (APP / relative).read_bytes()
+    data = (APP / "templates" / relative).read_bytes()
+    if legacy:
+        data = data.replace(b"name: overseer\n", b"name: spark-workers\n").replace(b"$overseer", b"$spark-workers")
+    return data
+
+
 def command_enable(args):
     root = project(args.project, enabled=False)
     if root == Path.home() or root == Path("/"):
         raise Error("Enable a specific project repository, not your home directory or filesystem root.")
     marker = root / MARKER
-    skill = root / SKILL
-    expected = ["SKILL.md", "agents/openai.yaml"]
+
     existing = {}
     if marker.exists():
         project(root)
         existing = json.loads(marker.read_text())
         if not args.update and args.sandbox is None and not getattr(args, "worker", None):
-            output({"project": str(root), "enabled": True, "message": "Already enabled. Use $spark-workers explicitly."})
+            output({"project": str(root), "enabled": True, "message": "Already enabled. Use $overseer (or $spark-workers in an older project) explicitly."})
             return
-    elif skill.exists():
-        raise Error(f"{skill} already exists; refusing to overwrite an existing skill.")
+        if "overseer" not in existing.get("skills", []) and (root / SKILL).exists():
+            for rel in SKILL_FILES:
+                path = root / SKILL / rel
+                if path.exists() and path.read_bytes() != skill_template(rel):
+                    raise Error(f"{root / SKILL} already exists; refusing to overwrite an unrelated skill.")
+    else:
+        for relative in (SKILL, LEGACY_SKILL):
+            if (root / relative).exists():
+                raise Error(f"{root / relative} already exists; refusing to overwrite an existing skill.")
     sandbox = args.sandbox or existing.get("sandbox", "workspace-write")
     worker = getattr(args, "worker", None) or existing.get("worker")
     if worker:
         spec = select_worker(worker)
         check_policy(spec, sandbox)
-    for rel in expected:
-        dest = skill / rel
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(APP / "templates" / rel, dest)
+    for relative in (SKILL, LEGACY_SKILL):
+        for rel in SKILL_FILES:
+            dest = root / relative / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(skill_template(rel, legacy=relative == LEGACY_SKILL))
     atomic_json(marker, {"owner": "spark-workers", "version": 1, "enabled_at": now(),
-                         "explicit_only": True, "sandbox": sandbox, "worker": worker})
+                         "explicit_only": True, "sandbox": sandbox, "worker": worker,
+                         "skills": ["overseer", "spark-workers"]})
     output({"project": str(root), "enabled": True,
-            "invoke": "$spark-workers <your task>",
-            "shell": "foundry run 'your task'",
+            "invoke": "$overseer <your task>", "legacy_invoke": "$spark-workers <your task>",
+            "shell": "overseer run 'your task'",
             "execution": sandbox,
             "note": "Open a new Codex session in this project to discover the skill. Native subagents remain the default."})
 
@@ -668,15 +687,18 @@ def command_disable(args):
     active = [t["id"] for t in tasks(root) if t["status"] not in TERMINAL]
     if active:
         raise Error(f"Cancel or finish active tasks first: {', '.join(active)}")
-    for rel in ("SKILL.md", "agents/openai.yaml"):
-        path = root / SKILL / rel
-        if path.exists() and path.read_bytes() != (APP / "templates" / rel).read_bytes():
-            raise Error(f"{path} was customized; preserve it manually before disabling.")
-    for rel in ("SKILL.md", "agents/openai.yaml"):
-        (root / SKILL / rel).unlink(missing_ok=True)
-    for directory in (root / SKILL / "agents", root / SKILL):
-        with contextlib.suppress(OSError):
-            directory.rmdir()
+    # Check both aliases before removing anything, preserving customized skills.
+    for relative in (SKILL, LEGACY_SKILL):
+        for rel in SKILL_FILES:
+            path = root / relative / rel
+            if path.exists() and path.read_bytes() != skill_template(rel, legacy=relative == LEGACY_SKILL):
+                raise Error(f"{path} was customized; preserve it manually before disabling.")
+    for relative in (SKILL, LEGACY_SKILL):
+        for rel in SKILL_FILES:
+            (root / relative / rel).unlink(missing_ok=True)
+        for sub in ("agents", "assets", ""):
+            with contextlib.suppress(OSError):
+                (root / relative / sub).rmdir()
     (root / MARKER).unlink()
     output({"project": str(root), "enabled": False, "note": "Existing worker worktrees and logs are retained."})
 
@@ -806,7 +828,7 @@ def command_doctor(args):
     spec = select_worker(getattr(args, "worker", None) or config.get("worker"))
     check_policy(spec, config.get("sandbox", "workspace-write"))
     checks = {"project_enabled": True, "explicit_only": "allow_implicit_invocation: false" in
-              (root / SKILL / "agents/openai.yaml").read_text(),
+              (root / (SKILL if (root / SKILL).is_dir() else LEGACY_SKILL) / "agents/openai.yaml").read_text(),
               "harness_binary": bool(shutil.which(spec["binary"])),
               "initial_commit": git(root, "rev-parse", "--verify", "HEAD", check=False).returncode == 0}
     parsed = urllib.parse.urlsplit(spec["base_url"])
@@ -835,7 +857,8 @@ def command_run(args):
         command.extend(["--model", args.model])
     if args.full_access:
         command.extend(["--sandbox", "danger-full-access", "--ask-for-approval", "never"])
-    os.execv(CODEX, [*command, "$spark-workers " + prompt])
+    invocation = "$overseer" if (root / SKILL / "SKILL.md").is_file() else "$spark-workers"
+    os.execv(CODEX, [*command, invocation + " " + prompt])
 
 
 def write_settings(settings):
@@ -946,7 +969,7 @@ def command_workers(args):
 
 def command_setup(args):
     if not sys.stdin.isatty():
-        raise Error("setup needs an interactive terminal. Use foundry configure --help for scripting.")
+        raise Error("setup needs an interactive terminal. Use overseer configure --help for scripting.")
     def ask(label, default=""):
         answer = input(label + (f" [{default}]" if default else "") + ": ").strip()
         return answer or default
@@ -968,10 +991,10 @@ def command_setup(args):
             if args.auth_mode not in {"api-key", "bearer"}:
                 raise Error("Choose api-key or bearer authentication.")
     command_configure(args)
-    print("Next: foundry workers; then inside your project:")
-    print(f"  foundry enable --worker {args.worker}" + (" --sandbox danger-full-access" if args.harness != "codex" else ""))
-    print("  foundry doctor")
-    print('  foundry run "your task"')
+    print("Next: overseer workers; then inside your project:")
+    print(f"  overseer enable --worker {args.worker}" + (" --sandbox danger-full-access" if args.harness != "codex" else ""))
+    print("  overseer doctor")
+    print('  overseer run "your task"')
 
 
 def bounded_seconds(text):
@@ -986,9 +1009,9 @@ def main():
     if len(sys.argv) == 3 and sys.argv[1] == "_work":
         worker(Path(sys.argv[2]))
         return
-    parser = argparse.ArgumentParser(description="Frontier Foundry: explicit local-model workers for Codex.",
-                                     epilog="Quick start: spark-workers enable; then in Codex: $spark-workers <task>")
-    parser.add_argument("--version", action="version", version="Frontier Foundry 0.3.0")
+    parser = argparse.ArgumentParser(description="Overseer: explicit local-model workers for Codex.",
+                                     epilog="Quick start: overseer enable; then in Codex: $overseer <task>")
+    parser.add_argument("--version", action="version", version="Overseer 0.4.0")
     commands = parser.add_subparsers(dest="command", required=True)
     actions = {
         "setup": (command_setup, "Interactively register a worker"),
@@ -1064,7 +1087,7 @@ def main():
         print("Cancelled.", file=sys.stderr)
         raise SystemExit(130)
     except (Error, OSError, ValueError) as exc:
-        print(f"spark-workers: {exc}", file=sys.stderr)
+        print(f"overseer: {exc}", file=sys.stderr)
         raise SystemExit(1)
 
 
