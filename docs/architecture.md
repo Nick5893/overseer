@@ -71,8 +71,9 @@ a successful Git conflict check.
 
 ## State and persistence
 
-By default, state is stored in `~/.local/state/spark-workers/projects/` under a
-hash of the enabled project's absolute path:
+State is stored in Overseer's state directory, which can be overridden with
+`OVERSEER_STATE_DIR`. Its `projects/` directory contains a hash of each enabled
+project's absolute path:
 
 ```text
 PROJECT_HASH/

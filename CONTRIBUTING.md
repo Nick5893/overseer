@@ -4,11 +4,11 @@ Use Linux and Python 3.11+. The bridge has no third-party Python dependencies.
 
 ```sh
 python3 -m unittest discover -s tests -v
-python3 -m py_compile spark_workers.py worker_harnesses.py spark_proxy.py make_model_catalog.py install.py
+python3 -m compileall -q .
 ```
 
 Keep changes small. Job state, queueing, permissions, and Git operations belong in
-`spark_workers.py`; harness protocol differences belong in `worker_harnesses.py`.
+the shared supervisor; harness protocol differences belong in `worker_harnesses.py`.
 Prefer another small adapter to introducing a framework or protocol service.
 
 For lifecycle changes, test a clean installation in a temporary prefix, including

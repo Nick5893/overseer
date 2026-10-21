@@ -86,7 +86,7 @@ overseer-catalog --model local-worker --context-window 65536 \
 ## Reuse an existing working local profile
 
 ```sh
-overseer configure --profile /path/to/your/spark.config.toml
+overseer configure --profile /path/to/your/worker.config.toml
 ```
 
 Existing command-backed provider authentication can remain in that profile. It

@@ -72,13 +72,9 @@ overseer --version
 ```
 
 Repository access is required while this repo is private. Installation creates
-`overseer`, the optional Codex helpers `overseer-adapter` and `overseer-catalog`,
-and a `spark-workers` compatibility command. It leaves global harness configuration,
-other projects, and shell startup files alone.
-
-To keep an existing `spark-workers` command, install with
-`python3 install.py --no-legacy-alias`. New project skills call `overseer`; the old
-Spark command can continue serving existing sessions.
+`overseer` and the optional Codex helpers `overseer-adapter` and
+`overseer-catalog`. It leaves global harness configuration, other projects, and
+shell startup files alone.
 
 For a preview alongside another installation, use
 `python3 install.py --prefix /path/to/preview` and that prefix's `bin/overseer`.
@@ -90,8 +86,7 @@ Reinstall from an updated checkout to update the CLI. Existing configuration,
 task state, opt-in markers, and compatibility commands are preserved. The
 checkout directory can keep its existing name.
 
-For Codex, `$overseer` is the explicit project skill; `$spark-workers` remains an
-alias.
+For Codex, `$overseer` is the explicit project skill.
 Refresh an enabled project's skills with `overseer enable --update`. Older
 projects can still launch through their existing skill until refreshed. Global
 harness settings and native delegation stay unchanged.
@@ -339,12 +334,13 @@ health does not establish inference or tool compatibility.
 
 Existing single-worker settings and jobs remain compatible. Environment overrides
 are `OVERSEER_CONFIG`, `OVERSEER_STATE_DIR`, `OVERSEER_PROFILE`, and
-`OVERSEER_CODEX`. The corresponding `SPARK_WORKERS_*` names remain supported;
-Overseer names take precedence. Profile and Codex executable overrides select the
+`OVERSEER_CODEX`. Profile and Codex executable overrides select the
 default Codex worker. Native delegation and global skills stay unchanged.
 
 Assignments, private configuration copies, sessions, tool outputs, and logs live
-under `~/.local/state/spark-workers`. Keep them private. Prefer environment
+in Overseer's state directory. `OVERSEER_STATE_DIR` overrides its location;
+`overseer result JOB_ID` includes paths to the job's workspace and evidence. Keep
+this state private. Prefer environment
 references for credentials; Pi's interactive `auth.json` is not copied. Local
 inference uses your configured endpoint, while reports and diffs read by the
 frontier operator enter that operator's model context.
@@ -356,7 +352,7 @@ the model endpoint. It does not bypass an organization's execution restrictions.
 
 ```sh
 python3 -m unittest discover -s tests -v
-python3 -m py_compile spark_workers.py worker_harnesses.py spark_proxy.py make_model_catalog.py install.py
+python3 -m compileall -q .
 ```
 
 The automated suite needs no GPU, model weights, or API keys. It tests all five

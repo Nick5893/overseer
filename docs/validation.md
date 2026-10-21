@@ -2,7 +2,7 @@
 
 Checked on 2026-10-20 on Linux ARM64, using Codex 0.163.0, Pi 1.1.0, OMP 18.12.4, OpenCode 2.0.16, Claude Code
 2.1.304, and the
-configured local Qwen server under its served alias `spark-model`.
+configured local Qwen server.
 
 ## Automated suite
 
@@ -23,7 +23,7 @@ They need no GPU, model weights, network connection, or provider credentials.
 | Installed Codex path | Clean prefix with spaces, generated profile, edit, report, same-thread follow-up, diff, apply |
 | Installed Pi path | Clean prefix with spaces, edit, same-session follow-up, report, tool output, apply |
 | Additional installed harnesses | OMP, OpenCode, and Claude edit/resume/apply; native error and exit checks, cancellation and timeout |
-| CLI setup | Wizard flow, credential environment isolation, all-harness discovery, side-by-side install preserving old Spark command |
+| CLI setup | Wizard flow, credential environment isolation, all-harness discovery, side-by-side install preserving existing commands |
 | Rename compatibility | Overseer and legacy CLI aliases share saved jobs; explicit skill aliases, existing-project launch, and unrelated-skill overwrite protection |
 | Working directory | Deliberately stale operator `PWD` replaced with actual worktree directory for every child |
 | Configuration | Register both harnesses, retain Codex default, preserve Pi registration; freeze job settings across source/config changes |
@@ -37,7 +37,7 @@ They need no GPU, model weights, network connection, or provider credentials.
 Additional checks:
 
 ```sh
-python3 -m py_compile spark_workers.py worker_harnesses.py spark_proxy.py make_model_catalog.py install.py tools/live_smoke.py
+python3 -m compileall -q .
 git diff --check
 ```
 

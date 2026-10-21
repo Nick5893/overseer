@@ -18,7 +18,7 @@ Each adapter implements:
 | `interrupt()` | Request cancellation without waiting synchronously for completion |
 | `finish()` (headless streams) | Check native process exit and final result after stdout closes |
 
-`Rpc` in `spark_workers.py` supplies continuous LF-delimited JSON reading,
+The shared `Rpc` client supplies continuous LF-delimited JSON reading,
 request IDs, correlated replies, buffered interleaved events, raw event logging,
 and child shutdown. RPC command dialects and finite native JSON streams remain
 small. A harness with

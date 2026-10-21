@@ -3,7 +3,7 @@ name: overseer
 description: Explicitly delegate implementation to configured local-model workers using Codex, Pi, OMP, OpenCode, or Claude Code while the frontier Codex operator plans, reviews, and integrates. Only for projects enabled with overseer enable.
 ---
 
-Use this workflow only when the user explicitly invokes `$overseer` or explicitly requests Overseer/local Spark/Qwen workers. Enabling the project does not change normal Codex delegation. This invocation covers the requested task and its corrections, not unrelated future tasks.
+Use this workflow only when the user explicitly invokes `$overseer` or explicitly requests Overseer workers. Enabling the project does not change normal Codex delegation. This invocation covers the requested task and its corrections, not unrelated future tasks.
 
 You are the operator. Inspect the project, form a concise plan, identify dependencies and acceptance criteria, then delegate implementation through the `overseer` command. Do not substitute native `spawn_agent` calls for local workers: native agents inherit your provider. Keep planning, review, integration, and final verification in this Codex session.
 
@@ -12,7 +12,7 @@ Run `overseer doctor` and resolve local setup errors before submitting work. Its
 Submit a self-contained assignment using a file or stdin, so shell quoting does not change code or instructions:
 
 ```sh
-overseer submit --name implement --prompt-file /tmp/spark-assignment.txt
+overseer submit --name implement --prompt-file /tmp/overseer-assignment.txt
 overseer status
 overseer wait JOB_ID --seconds 30
 overseer result JOB_ID
@@ -22,7 +22,7 @@ overseer diff JOB_ID
 
 Include the intended behavior, relevant files, boundaries, acceptance checks, and expected report in each assignment. Workers start from a private snapshot of tracked and non-ignored untracked files, including existing uncommitted changes. Ignored files (dependencies, secrets, build artifacts) are not copied. They share one global inference slot and run in isolated worktrees. Give workers small, concrete tasks; avoid repeating the entire operator conversation.
 
-Review the actual diff and test evidence. For corrections, write a follow-up assignment and use `overseer followup JOB_ID --prompt-file /tmp/spark-correction.txt`; this resumes the same harness conversation and worktree using the job's saved configuration and permissions. A follow-up requires a finished task. If inference fails, report the failure; do not silently use an OpenAI worker or another harness instead.
+Review the actual diff and test evidence. For corrections, write a follow-up assignment and use `overseer followup JOB_ID --prompt-file /tmp/overseer-correction.txt`; this resumes the same harness conversation and worktree using the job's saved configuration and permissions. A follow-up requires a finished task. If inference fails, report the failure; do not silently use an OpenAI worker or another harness instead.
 
 Apply only reviewed completed work with `overseer apply JOB_ID`, then run the relevant checks in the original project. Application checks for conflicts and preserves the user's index and pre-existing changes. If it conflicts, inspect and integrate deliberately; do not reset or overwrite files to force application. After applying a task, submit new work against the updated project rather than following up the applied task.
 
