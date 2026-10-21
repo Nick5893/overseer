@@ -65,8 +65,7 @@ overseer --version
 
 Repository access is required while this repo is private. Installation creates
 `overseer`, the optional Codex helpers `overseer-adapter` and `overseer-catalog`,
-and compatibility commands `foundry`, `foundry-adapter`, `foundry-catalog`, and
-`spark-workers`. It leaves global Codex configuration,
+and a `spark-workers` compatibility command. It leaves global Codex configuration,
 other projects, and shell startup files alone.
 
 To keep an existing `spark-workers` command, install with
@@ -77,14 +76,13 @@ For a preview alongside another installation, use
 `python3 install.py --prefix /path/to/preview` and that prefix's `bin/overseer`.
 Conflicting commands are refused unless you explicitly pass `--force`.
 
-## Upgrading from Frontier Foundry
+## Updating an existing installation
 
-The project and primary command are now **Overseer**. Existing `foundry` commands
-remain aliases. Existing configuration, task state, and opt-in markers retain
-their original directory names so the rename preserves saved workers and jobs.
-The checkout directory can keep its old name.
+Reinstall from an updated checkout to update the CLI. Existing configuration,
+task state, opt-in markers, and compatibility commands are preserved. The
+checkout directory can keep its existing name.
 
-`$overseer` is the new explicit project skill; `$spark-workers` remains an alias.
+`$overseer` is the explicit project skill; `$spark-workers` remains an alias.
 Refresh an enabled project's skills with `overseer enable --update`. Older
 projects can still launch through their existing skill until refreshed. Global
 Codex settings and native delegation stay unchanged.
@@ -203,6 +201,35 @@ messages into the conversation.
 explicitly want full access for that operator session as well. Worker and
 operator permissions are separate choices.
 
+## Delegate multiple assignments
+
+One operator can manage several local worker jobs. For example, Codex with an
+OpenAI model can plan a feature and submit three assignments to Codex workers
+using the same configured Qwen endpoint. Each job has its own assignment,
+conversation, Git worktree, report, logs, and diff. Corrections resume that job's
+saved conversation and worktree.
+
+**Jobs queue; one local worker runs at a time within a shared state directory.**
+Submitting three jobs creates three separate worker conversations. They execute
+one at a time, and queue order is not guaranteed. This limit applies
+across enabled projects sharing that state directory; it does not control other
+clients of your model server.
+
+After configuring `codex-local` for Qwen and enabling the project, prompt the
+operator with:
+
+```text
+$overseer Split this feature into three independent assignments using the
+codex-local Qwen worker. Review each result, request corrections where needed,
+and verify the integrated changes.
+```
+
+The operator collects reports and diffs through CLI commands in the same Codex
+conversation, then reviews and applies the changes. These jobs do not appear in
+Codex's native subagents panel. Independent jobs may be submitted together. If
+one assignment needs another's changes, integrate the prerequisite before
+submitting the dependent job so it starts from the updated project.
+
 ## Mix harnesses in one project
 
 Register both workers, then select one per assignment:
@@ -257,7 +284,9 @@ Reconnect with `tmux attach -t overseer`. Workers persist independently of tmux.
 
 ## Configuration and privacy
 
-Overseer writes its own settings to `~/.config/frontier-foundry/config.toml`:
+Overseer keeps its own private settings file. Run `overseer workers` to see its
+location in the `config` field. A configuration with two registered workers looks
+like this:
 
 ```toml
 [workers.codex-local]
