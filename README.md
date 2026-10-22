@@ -71,8 +71,7 @@ export PATH="$HOME/.local/bin:$PATH"
 overseer --version
 ```
 
-Repository access is required while this repo is private. Installation creates
-`overseer` and the optional Codex helpers `overseer-adapter` and
+Installation creates `overseer` and the optional Codex helpers `overseer-adapter` and
 `overseer-catalog`. It leaves global harness configuration, other projects, and
 shell startup files alone.
 
