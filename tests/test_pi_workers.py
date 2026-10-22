@@ -62,6 +62,7 @@ FAKE_PI = '''#!/usr/bin/env python3
 import json, os, sys
 from pathlib import Path
 args = sys.argv[1:]
+assert "Implementation workspace: " + str(Path.cwd()) in args[args.index("--append-system-prompt")+1]
 required = ["--no-extensions", "--no-mcp", "--offline", "--no-skills", "--no-prompt-templates",
             "--no-context-files", "--no-approve"]
 assert all(flag in args for flag in required), args

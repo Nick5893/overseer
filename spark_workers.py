@@ -43,7 +43,7 @@ SKILL = Path(".agents/skills/overseer")
 LEGACY_SKILL = Path(".agents/skills/spark-workers")
 SKILL_FILES = ("SKILL.md", "agents/openai.yaml", "assets/overseer.jpg")
 TERMINAL = {"completed", "failed", "cancelled", "orphaned"}
-WORKER_INSTRUCTIONS = """You are a local implementation worker managed by a frontier-model Codex operator.
+WORKER_INSTRUCTIONS = """You are a local implementation worker managed by an Overseer operator.
 Work only on the supplied assignment in your current isolated Git worktree.
 Read applicable AGENTS.md instructions. Implement code and run relevant checks.
 Do not delegate, launch other agents, invoke overseer, foundry, or spark-workers, change the original
@@ -118,7 +118,19 @@ def check_policy(spec, sandbox):
         raise Error(f"{spec['harness']} has no built-in workspace sandbox supported by this bridge. Explicitly enable --sandbox danger-full-access for this project.")
 
 
-def freeze_worker(selected, folder, sandbox):
+def task_instructions(task):
+    return WORKER_INSTRUCTIONS + f"""
+Implementation workspace: {task['workspace']}
+Original checkout (do not edit or run implementation commands here): {task['project']}
+Your harness is already started in the implementation workspace. Resolve all
+assignment file paths relative to that workspace. If an assignment mentions an
+absolute path under the original checkout, translate it to the corresponding
+relative path inside your workspace. Never follow it back to the original.
+Run tests in your workspace, and leave integration to the operator's overseer apply.
+"""
+
+
+def freeze_worker(selected, folder, sandbox, *, instructions=WORKER_INSTRUCTIONS):
     check_policy(selected, sandbox)
     spec = dict(selected)
     if spec["harness"] == "codex":
@@ -131,6 +143,12 @@ def freeze_worker(selected, folder, sandbox):
         provider = dict(config["providers"][spec["provider"]])
         provider["models"] = [m for m in provider["models"] if m["id"] == spec["model"]]
         provider.pop("modelOverrides", None)
+        # Pi marks environment references with '$'; OMP expects the variable
+        # name itself. Keep the reference, never resolve a secret into state.
+        reference = re.fullmatch(r"\$([A-Za-z_][A-Za-z0-9_]*)", str(provider.get("apiKey", "")))
+        if spec["harness"] == "omp" and reference:
+            provider["apiKey"] = reference[1]
+            spec["api_key_env"] = reference[1]
         agent_dir = folder / (spec["harness"] + "-home")
         filename = "models.yml" if spec["harness"] == "omp" else "models.json"
         atomic_json(agent_dir / filename, {"providers": {spec["provider"]: provider}})
@@ -155,7 +173,7 @@ def freeze_worker(selected, folder, sandbox):
                     "models": {spec["model"]: {"name": spec["model"], "limit": {
                         "context": spec.get("context_window", 32768), "output": spec.get("max_tokens", 4096)}}}}},
                 "enabled_providers": [spec["provider"]], "model": model, "small_model": model,
-                "agent": {"foundry": {"mode": "primary", "model": model, "prompt": WORKER_INSTRUCTIONS}},
+                "agent": {"foundry": {"mode": "primary", "model": model, "prompt": instructions}},
                 "permission": {"*": "deny", **{name: "allow" for name in (
                     "read", "edit", "bash", "glob", "grep", "list", "external_directory")}},
                 "autoupdate": False, "snapshot": False, "share": "disabled", "plugin": [], "mcp": {}})
@@ -321,7 +339,7 @@ def launch(path):
     return task
 
 
-def harness_command(task):
+def harness_command(task, *, instructions=WORKER_INSTRUCTIONS):
     # Codex 0.163 supports profile files on exec/TUI, but not app-server.
     # Flatten the existing profile into per-process overrides, as codex-spark's
     # shared-server launcher does. No config files or daemon settings change.
@@ -330,7 +348,7 @@ def harness_command(task):
         command = [spec["binary"], "--bare", "--print", "--verbose", "--output-format", "stream-json",
                    "--input-format", "text", "--model", spec["model"], "--effort", "medium", "--dangerously-skip-permissions",
                    "--tools", "Bash,Read,Edit,Write,Glob,Grep", "--strict-mcp-config",
-                   "--mcp-config", '{"mcpServers":{}}', "--append-system-prompt", WORKER_INSTRUCTIONS]
+                   "--mcp-config", '{"mcpServers":{}}', "--append-system-prompt", instructions]
         command.extend(["--resume", task["resume_ref"]] if task.get("resume_ref") else ["--session-id", spec["session_id"]])
         return command
     if spec.get("harness") == "opencode":
@@ -346,7 +364,7 @@ def harness_command(task):
                    "--config", str(Path(spec["agent_dir"]) / "worker.yml"),
                    "--model", model, "--smol", model, "--slow", model, "--plan", model,
                    "--tools", "read,bash,edit,write,grep,glob", "--thinking", "off",
-                   "--append-system-prompt", WORKER_INSTRUCTIONS,
+                   "--append-system-prompt", instructions,
                    "--session-dir", str(Path(task["workspace"]).parent / "sessions")]
         if task.get("resume_ref"):
             command.extend(["--resume", task["resume_ref"]])
@@ -356,7 +374,7 @@ def harness_command(task):
                    "--no-skills", "--no-prompt-templates", "--no-themes", "--no-context-files",
                    "--no-approve", "--provider", spec["provider"], "--model", spec["model"],
                    "--tools", "read,bash,edit,write,grep,find,ls", "--thinking", "off",
-                   "--append-system-prompt", WORKER_INSTRUCTIONS,
+                   "--append-system-prompt", instructions,
                    "--session-dir", str(Path(task["workspace"]).parent / "sessions")]
         if task.get("resume_ref"):
             command.extend(["--session", task["resume_ref"]])
@@ -378,7 +396,7 @@ def harness_command(task):
     return command
 
 
-def harness_environment(task):
+def harness_environment(task, *, instructions=None):
     # App-server persists project trust on thread/start even with CLI overrides.
     # Give the worker a real, private Codex home for config, history, and caches.
     # This uses CODEX_HOME for its documented purpose, only in the child process.
@@ -410,7 +428,10 @@ def harness_environment(task):
         directory = Path(spec["agent_dir"])
         for kind in ("DATA", "CONFIG", "CACHE", "STATE"):
             env["XDG_" + kind + "_HOME"] = str(directory / kind.lower())
-        env.update(OPENCODE_CONFIG_CONTENT=(directory / "opencode.json").read_text(),
+        config = json.loads((directory / "opencode.json").read_text())
+        if instructions is not None:
+            config["agent"]["foundry"]["prompt"] = instructions
+        env.update(OPENCODE_CONFIG_CONTENT=json.dumps(config),
                    OPENCODE_CONFIG_DIR=str(directory / "config"), OPENCODE_DISABLE_PROJECT_CONFIG="true",
                    OPENCODE_DISABLE_CLAUDE_CODE="true", OPENCODE_DISABLE_AUTOUPDATE="true",
                    OPENCODE_DISABLE_DEFAULT_PLUGINS="true", OPENCODE_DISABLE_EXTERNAL_SKILLS="true")
@@ -554,13 +575,14 @@ def worker(path):
             update_task(path, **{k: task[k] for k in ("worker_config", "harness", "worker", "schema_version")})
         spec = task["worker_config"]
         check_policy(spec, task["sandbox"])
-        command = harness_command(task)
+        instructions = task_instructions(task)
+        command = harness_command(task, instructions=instructions)
         streaming = spec["harness"] in {"claude", "opencode"}
         kwargs = {"dialect": "pi"} if spec["harness"] in {"pi", "omp"} else {}
         rpc = Rpc(command, task["workspace"], folder / "app-server.log", folder / "events.jsonl",
-                  env=harness_environment(task), **kwargs)
+                  env=harness_environment(task, instructions=instructions), **kwargs)
         adapter = ADAPTERS[spec["harness"]](rpc, task)
-        update_task(path, **adapter.start(WORKER_INSTRUCTIONS))
+        update_task(path, **adapter.start(instructions))
         if cancelled.exists() or stopping.is_set():
             update_task(path, status="cancelled", finished_at=now())
             return
@@ -743,7 +765,8 @@ def command_followup(args):
         if report.exists():
             report.replace(path.parent / f"report-attempt-{task['attempt']}.txt")
         update_task(path, status="queued", assignment=text, attempt=task["attempt"] + 1,
-                    started_at=None, finished_at=None, error=None, turn_id=None)
+                    started_at=None, finished_at=None, error=None, turn_id=None,
+                    timeout_seconds=getattr(args, "timeout", None) or task["timeout_seconds"])
         output(launch(path))
 
 
@@ -848,6 +871,10 @@ def command_doctor(args):
         raise SystemExit(1)
 
 
+def command_instructions(args):
+    print((APP / "templates/OPERATOR.md").read_text(), end="")
+
+
 def command_run(args):
     root = project(args.project)
     prompt = prompt_from(args)
@@ -945,7 +972,7 @@ def command_configure(args):
     settings.setdefault("workers", {})[name] = spec
     write_settings(settings)
     output({"config": str(CONFIG_FILE), "worker": name, "harness": harness,
-            "note": "Normal Codex settings and delegation are unchanged. Select this worker with enable or submit --worker."})
+            "note": "Normal harness settings and delegation are unchanged. Select this worker with enable or submit --worker."})
 
 
 def command_workers(args):
@@ -1009,18 +1036,19 @@ def main():
     if len(sys.argv) == 3 and sys.argv[1] == "_work":
         worker(Path(sys.argv[2]))
         return
-    parser = argparse.ArgumentParser(description="Overseer: explicit local-model workers for Codex.",
-                                     epilog="Quick start: overseer enable; then in Codex: $overseer <task>")
-    parser.add_argument("--version", action="version", version="Overseer 0.4.0")
+    parser = argparse.ArgumentParser(description="Overseer: local-model workers for your coding harness.",
+                                     epilog="Quick start: overseer enable; give your operator the overseer instructions workflow")
+    parser.add_argument("--version", action="version", version="Overseer 0.5.0")
     commands = parser.add_subparsers(dest="command", required=True)
     actions = {
         "setup": (command_setup, "Interactively register a worker"),
         "workers": (command_workers, "List configured workers and executable availability"),
-        "configure": (command_configure, "Select your local worker profile without changing normal Codex settings"),
-        "enable": (command_enable, "Enable this project; native Codex agents stay the default"),
+        "instructions": (command_instructions, "Print the operator workflow for any coding harness"),
+        "configure": (command_configure, "Configure a worker without changing your harness defaults"),
+        "enable": (command_enable, "Enable Overseer for this project; normal delegation stays unchanged"),
         "disable": (command_disable, "Remove this project's integration"),
         "doctor": (command_doctor, "Check project opt-in and local provider health"),
-        "run": (command_run, "Open normal Codex as operator with Spark workers explicitly invoked"),
+        "run": (command_run, "Open Codex as operator with Overseer explicitly invoked"),
         "submit": (command_submit, "Queue an assignment in an isolated worktree"),
         "followup": (command_followup, "Resume a finished worker with a correction or follow-up"),
         "status": (command_status, "Show project tasks or one task"),
@@ -1046,6 +1074,8 @@ def main():
         if name == "submit":
             sub.add_argument("--name", default="implementation", help="Human-readable task label")
             sub.add_argument("--timeout", type=bounded_seconds, default=1800, help="Turn time limit in seconds (default: 1800)")
+        if name == "followup":
+            sub.add_argument("--timeout", type=bounded_seconds, help="Turn time limit in seconds (default: preserve this job's limit)")
         if name == "run":
             sub.add_argument("--full-access", action="store_true", help="Explicitly use full-access permissions for this operator session too (needed when host sandboxing is unavailable)")
             sub.add_argument("--model", help="Frontier operator model; omitted preserves your normal Codex model")

@@ -19,6 +19,9 @@ import json, os, signal, sys, time
 from pathlib import Path
 args = sys.argv[1:]
 assert os.environ["PWD"] == str(Path.cwd()), "Inherited operator PWD escaped the job worktree"
+if KIND != "opencode":
+    instructions=args[args.index("--append-system-prompt")+1]
+    assert "Implementation workspace: " + str(Path.cwd()) in instructions
 model = args[args.index("--model")+1]
 def emit(record): print(json.dumps(record), flush=True)
 def record(text):
@@ -66,6 +69,7 @@ else:
         assert "--standalone" in args and "--auto" in args
         assert os.environ["OPENCODE_DISABLE_PROJECT_CONFIG"]=="true"
         config=json.loads(os.environ["OPENCODE_CONFIG_CONTENT"])
+        assert "Implementation workspace: " + str(Path.cwd()) in config["agent"]["foundry"]["prompt"]
         assert config["model"]==config["small_model"]==model
         assert config["permission"]["*"]=="deny"
         home=Path(os.environ["XDG_STATE_HOME"]); home.mkdir(parents=True,exist_ok=True)
@@ -211,6 +215,68 @@ class ExtraHarnessTests(unittest.TestCase):
 
 
 class WizardAndOmpContractTests(unittest.TestCase):
+    def test_opencode_scoped_instructions_do_not_mutate_frozen_config(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            frozen = bridge.freeze_worker({"harness": "opencode", "name": "local", "model": "qwen",
+                "provider": "local", "base_url": "http://localhost/v1"}, folder, "danger-full-access")
+            task = {**frozen, "project": "/original/project", "workspace": "/private/worktree"}
+            instructions = bridge.task_instructions(task)
+            env = bridge.harness_environment(task, instructions=instructions)
+            config = json.loads(env["OPENCODE_CONFIG_CONTENT"])
+            self.assertEqual(config["agent"]["foundry"]["prompt"], instructions)
+            self.assertIn("Implementation workspace: /private/worktree", instructions)
+            self.assertIn("Original checkout (do not edit", instructions)
+            saved = json.loads((folder / "opencode-home/opencode.json").read_text())
+            self.assertEqual(saved["agent"]["foundry"]["prompt"], bridge.WORKER_INSTRUCTIONS)
+
+    def test_omp_translates_pi_env_reference_without_persisting_secret(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            source = base / "models.json"
+            source.write_text(json.dumps({"providers": {"local": {"apiKey": "$LOCAL_MODEL_KEY",
+                "api": "openai-completions", "baseUrl": "http://localhost/v1", "models": [{"id": "qwen"}]}}}))
+            selected = {"harness": "omp", "name": "omp-local", "models": str(source),
+                        "provider": "local", "model": "qwen"}
+            with patch.dict(os.environ, {"LOCAL_MODEL_KEY": "test-secret-do-not-persist"}):
+                frozen = bridge.freeze_worker(selected, base, "danger-full-access")
+                spec = frozen["worker_config"]
+                config = json.loads((base / "omp-home/models.yml").read_text())
+                self.assertEqual(config["providers"]["local"]["apiKey"], "LOCAL_MODEL_KEY")
+                self.assertEqual(spec["api_key_env"], "LOCAL_MODEL_KEY")
+                self.assertNotIn("test-secret-do-not-persist", json.dumps(frozen) + json.dumps(config))
+                self.assertEqual(json.loads(source.read_text())["providers"]["local"]["apiKey"], "$LOCAL_MODEL_KEY")
+                bridge.harness_environment(frozen)
+            with patch.dict(os.environ, {}, clear=True), self.assertRaisesRegex(bridge.Error, "Missing credential"):
+                bridge.harness_environment(frozen)
+
+    def test_role_instructions_do_not_leak_worker_delegation_ban_into_operator(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            profile = base / "profile.toml"
+            profile.write_text('model="qwen"\nmodel_provider="local"\n[model_providers.local]\nbase_url="http://localhost/v1"\nwire_api="responses"\n')
+            models = base / "models.json"
+            models.write_text(json.dumps({"providers": {"local": {"api": "openai-completions",
+                "baseUrl": "http://localhost/v1", "models": [{"id": "qwen"}]}}}))
+            instructions = "Plan work and delegate implementation through the Overseer CLI."
+            for harness in ("codex", "pi", "omp", "opencode", "claude"):
+                with self.subTest(harness=harness):
+                    selected = {"name": "local", "harness": harness, "model": "qwen", "provider": "local",
+                                "binary": "fake-harness", "profile": str(profile), "models": str(models),
+                                "base_url": "http://localhost/v1"}
+                    for role, text in (("operator", instructions), ("worker", bridge.WORKER_INSTRUCTIONS)):
+                        folder = base / harness / role
+                        folder.mkdir(parents=True)
+                        frozen = bridge.freeze_worker(selected, folder, "danger-full-access", instructions=text)
+                        task = {**frozen, "workspace": str(base)}
+                        command = bridge.harness_command(task, instructions=text)
+                        if harness == "opencode":
+                            config = json.loads((folder / "opencode-home/opencode.json").read_text())
+                            self.assertEqual(config["agent"]["foundry"]["prompt"], text)
+                        elif harness != "codex":
+                            self.assertEqual(command[command.index("--append-system-prompt") + 1], text)
+                    self.assertIn("Do not delegate", bridge.WORKER_INSTRUCTIONS)
+
     def test_setup_configures_only_and_shows_explicit_project_choice(self):
         args = SimpleNamespace()
         with patch.object(bridge.sys.stdin, "isatty", return_value=True), patch("builtins.input", side_effect=["opencode", "local-code", "opencode", "http://localhost:1234/v1", "qwen", "local", "LOCAL_KEY"]), patch.object(bridge, "command_configure") as configure, contextlib.redirect_stdout(io.StringIO()) as out:

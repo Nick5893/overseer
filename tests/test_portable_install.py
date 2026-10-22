@@ -25,6 +25,22 @@ bridge = module("portable_bridge", "spark_workers.py")
 
 
 class PortableTests(unittest.TestCase):
+    def test_installed_operator_instructions_need_no_project_or_codex(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            installer.install(folder / "prefix")
+            env = dict(os.environ, OVERSEER_CONFIG=str(folder / "settings.toml"),
+                       OVERSEER_CODEX=str(folder / "no-codex"))
+            result = subprocess.run([str(folder / "prefix/bin/overseer"), "instructions"],
+                                    cwd=folder, env=env, capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("overseer submit", result.stdout)
+            self.assertIn("overseer followup", result.stdout)
+            self.assertIn("overseer apply", result.stdout)
+            self.assertIn("repeat the wait", result.stdout)
+            self.assertNotIn("$overseer", result.stdout)
+            self.assertNotIn("Codex", result.stdout)
+
     def test_installer_refuses_foreign_command_before_copying(self):
         with tempfile.TemporaryDirectory() as tmp:
             prefix = Path(tmp)
@@ -91,6 +107,8 @@ for line in sys.stdin:
     if method == "initialize":
         result = {}
     elif method in ("thread/start", "thread/resume"):
+        assert "Implementation workspace: " + params["cwd"] in params["developerInstructions"]
+        assert "Original checkout (do not edit" in params["developerInstructions"]
         thread_id = params.get("threadId", str(uuid.uuid4()))
         result = {"thread": {"id": thread_id}, "model": params["model"], "modelProvider": params["modelProvider"]}
     elif method == "turn/start":
@@ -162,10 +180,11 @@ for line in sys.stdin:
             self.assertEqual(result["provider"], "local_worker")
             self.assertFalse((project / "implementation.txt").exists())
             profile.write_text('model = "changed-after-submit"\n')
-            cli("followup", task_id, "Apply this follow-up correction")
+            cli("followup", task_id, "Apply this follow-up correction", "--timeout", "10")
             task = cli("wait", task_id, "--seconds", "10")
             self.assertEqual(task["status"], "completed", task)
             self.assertEqual(task["thread_id"], first_thread)
+            self.assertEqual(task["timeout_seconds"], 10)
             self.assertEqual(task["model"], "tiny-local-model")
             diff = subprocess.run([str(binary), "diff", task_id], cwd=project, env=env,
                                   capture_output=True, text=True, check=True)

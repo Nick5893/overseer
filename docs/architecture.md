@@ -44,6 +44,10 @@ multi-host worker scheduling, or a remote execution cluster.
 5. The harness calls the model and executes read/edit/test tools. Codex uses the
    saved sandbox mode. Other harnesses require explicit `danger-full-access`;
    this bridge does not provide equivalent workspace sandboxing for them.
+   Every turn receives the actual worktree root and the original checkout path,
+   with instructions to translate original paths into worktree-relative paths.
+   Operators are instructed to use relative file paths in assignments. These are
+   task instructions, not a filesystem security boundary.
 6. Raw received records are saved to `events.jsonl`. Adapter events become common
    `identity`, `report`, `tool`, and `finished` records in `progress.jsonl`, tagged with harness,
    attempt, and timestamp. Reports go to `report.txt`. Codex completes on the

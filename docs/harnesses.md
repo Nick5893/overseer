@@ -55,6 +55,11 @@ registered before installation; `workers` and `doctor` report its availability.
 The interactive wizard writes only Overseer configuration. Project opt-in remains
 a separate explicit command, and ordinary Codex delegation remains unchanged.
 
+For any operator, run `overseer instructions` and add its output to the session
+or project instructions. It covers submission, repeated waits, reports, diff
+review, same-session corrections, application, and verification. It does not
+launch a harness or change its model.
+
 ## OMP / Oh My Pi
 
 OMP is Pi-derived, but its current protocol is different. Pi's `agent_settled`
@@ -69,6 +74,11 @@ Native and foreign discovery sources are disabled through the job overlay;
 extensions, skills, rules, LSP, automatic titles, and prewalk are disabled. Built-in
 tools are limited to file operations and bash. Model roles are pinned to the
 configured worker model; native task/subagent tools are not exposed.
+
+Pi-style `$VARIABLE` API-key references in imported model files are translated
+to OMP's environment-variable-name form without writing the secret to disk.
+The variable must be set in the operator's environment. See
+[OMP credential resolution](https://github.com/can1357/oh-my-pi/blob/main/docs/models.md#auth-and-api-key-resolution-order).
 
 ## OpenCode
 

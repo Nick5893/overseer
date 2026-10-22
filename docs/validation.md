@@ -11,7 +11,7 @@ python3 -m unittest discover -s tests -v
 ```
 
 ```text
-Ran 53 tests
+Ran 59 tests
 OK
 ```
 
@@ -33,6 +33,9 @@ They need no GPU, model weights, network connection, or provider credentials.
 | Recovery | Active cancellation, timeout, disconnect, orphan detection, retained work |
 | Git boundaries | Dirty snapshot, index preservation, new files, apply conflicts, failed-job refusal |
 | Transport | Interleaved events, EOF, literal Unicode separators, Codex freeform/namespaced tool translation |
+| Operator workflow | Installed instructions without Codex; distinct operator/worker roles; explicit worktree paths in every worker harness |
+| Imported OMP credentials | Pi environment references translated without persisting secrets; missing variables fail before inference |
+| Evidence verifier | Help output and summary-only diffs cannot count as reviewing completed implementation work |
 
 Additional checks:
 
@@ -68,6 +71,49 @@ a passing bridge suite does not establish compatibility of every tool shape.
 
 A separate terminal-level test also drove `overseer setup` through a real PTY and
 verified its generated worker configuration. It did not enable a project.
+
+## Live orchestrator checks
+
+Checked on 2026-10-21 with the harness versions listed above. These checks used
+**local Qwen for both operator and worker**, verifying that each CLI can drive
+the bridge through its own native tools. They do not test every cloud provider
+or login configuration.
+
+| Operator CLI | Worker CLI | Final fixture tests | Operator turns |
+| --- | --- | --- | --- |
+| Pi | OMP | 9 passed | 1 |
+| OMP | OpenCode | 6 passed | 1 |
+| OpenCode | Claude Code | 7 passed | 1 |
+| Claude Code | Codex | 8 passed | 1 |
+| Codex | Pi | 7 passed | 1 |
+| Codex | Codex | 6 passed | 1 |
+
+These six pairings cover all five CLIs in both roles; this is not an exhaustive
+live test of all 25 possible pairings. A separate Codex → Pi run also passed with
+6 fixture tests after a continuation in the same operator conversation (2 turns).
+Every passing run used the same worker conversation for its correction and kept
+the original implementation untouched until application, with its staged index
+and original tests preserved.
+
+The operator model performed every submission, wait, result retrieval, full diff
+review, correction, and application. The fixture controller prepared the project
+and verified evidence; it did not issue those worker commands on the operator's
+behalf. The verifier checks full patches before and after the correction; a
+summary-only diff or a model's success statement cannot pass. Independent checks
+rerun tests and verify invalid-bounds behavior after integration.
+
+Sanitized [machine-readable results](orchestrator-results.json) include actual
+attempt and operator-turn counts, CLI operations, and checks performed. Failed
+CLI calls are recorded even when the operator corrected the syntax and completed
+the task. Raw provider files, sessions, reports, and tool traces remain private.
+The reusable [orchestrator test](orchestrators.md#repeat-the-live-integration-check)
+can check another selected pairing or require completion in one operator turn.
+
+The live checks led to three bridge improvements: importing Pi environment-key
+references correctly for OMP; giving every worker its actual worktree root and
+instructions to translate original-checkout paths; and supporting `--timeout`
+on follow-ups. The operator workflow now explicitly requires refreshed reports
+and full diffs after every correction and continued waiting until work is done.
 
 ## Repeat a live check
 
@@ -114,4 +160,8 @@ on large repositories. They do not establish filesystem sandboxing for Pi or
 benchmark one harness against another. The bridge serializes its own workers;
 unrelated clients using the same GPU are outside that lock. Only Linux is
 supported, and worker results return through CLI tool output rather than native
-Codex agent notifications.
+agent notifications. Local operator models can end a turn early; the live
+test records any bounded continuation in the same native conversation. Directly
+launched harnesses retain their own conversation and execution behavior. Worktree
+instructions are not filesystem confinement, and live checks do not establish
+correctness for arbitrary coding tasks or every plugin/TUI configuration.

@@ -12,7 +12,7 @@ def install(prefix, *, force=False, legacy_alias=True):
     destination = prefix / "share/frontier-foundry"
     binaries = prefix / "bin"
     files = ["spark_workers.py", "worker_harnesses.py", "spark_proxy.py", "make_model_catalog.py",
-             "templates/SKILL.md", "templates/agents/openai.yaml", "assets/overseer.jpg"]
+             "templates/SKILL.md", "templates/OPERATOR.md", "templates/agents/openai.yaml", "assets/overseer.jpg"]
     links = {"overseer": "spark_workers.py", "overseer-adapter": "spark_proxy.py",
              "overseer-catalog": "make_model_catalog.py",
              "foundry": "spark_workers.py", "spark-workers": "spark_workers.py",

@@ -184,7 +184,15 @@ outside the worktree. Overseer never downgrades `workspace-write` to full access
 ### 3. Open your chosen orchestrator and give it work
 
 Start your operator harness in the enabled project. Put the following workflow
-in its project instructions or include it with your prompt:
+in its project instructions or include it with your prompt. The complete reusable
+workflow is available without starting Codex:
+
+```sh
+overseer instructions
+```
+
+See [orchestrator setup](docs/orchestrators.md) for Pi, OMP, OpenCode, Claude Code,
+and Codex launch examples and a repeatable live orchestration check.
 
 ```text
 Use the Overseer CLI for local implementation workers. Consult overseer --help
@@ -289,7 +297,8 @@ overseer cancel JOB_ID
 `submit` also accepts text or `--prompt-file -` for stdin. Commands accept
 `--project /absolute/path/to/project`. `wait` returns within 60 seconds while the
 job continues; `submit --timeout SECONDS` limits an inference turn (default 1800,
-maximum 3600).
+maximum 3600). `followup --timeout SECONDS` can set a new limit for the next turn;
+omitting it keeps the job's existing limit.
 
 Snapshots include staged, unstaged, and non-ignored untracked files without
 changing the user's index. Ignored dependencies and secrets are not copied
@@ -360,8 +369,15 @@ provider checks, failure and cancellation behavior, Unicode JSONL, Git isolation
 conflicts, and Codex tool translation. See [validation evidence](docs/validation.md)
 for the live model smoke test and [contributing](CONTRIBUTING.md) for development.
 
+Live checks have also exercised **all five CLIs as both operator and worker**
+with local Qwen, across six distinct pairings. They verify actual submissions,
+same-session corrections, full diff reviews, application, and independent tests.
+See the [orchestrator results](docs/validation.md#live-orchestrator-checks) for the
+tested combinations, recorded continuations, and limits.
+
 ## Documentation
 
+- [Choose an orchestrator](docs/orchestrators.md)
 - [Architecture and lifecycle](docs/architecture.md)
 - [Local backend setup](docs/local-backend.md)
 - [Harness support and compatibility](docs/harnesses.md)

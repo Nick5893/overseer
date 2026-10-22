@@ -44,7 +44,7 @@ def main():
         base = args.output.expanduser().resolve()
         base.mkdir(mode=0o700)  # Refuse existing directories.
     else:
-        base = Path(tempfile.mkdtemp(prefix="foundry-live-"))
+        base = Path(tempfile.mkdtemp(prefix="overseer-live-"))
     print(f"Evidence: {base}", flush=True)
     prefix = base / "install prefix"
     install(prefix)
@@ -52,10 +52,10 @@ def main():
     project = base / "project"
     project.mkdir()
     env = os.environ.copy()
-    for key in ("SPARK_WORKERS_PROFILE", "SPARK_WORKERS_CODEX"):
+    for key in ("SPARK_WORKERS_PROFILE", "SPARK_WORKERS_CODEX", "OVERSEER_PROFILE", "OVERSEER_CODEX"):
         env.pop(key, None)
-    env.update(SPARK_WORKERS_CONFIG=str(base / "settings.toml"),
-               SPARK_WORKERS_STATE_DIR=str(base / "state"), CODEX_HOME=str(base / "operator-home"))
+    env.update(OVERSEER_CONFIG=str(base / "settings.toml"),
+               OVERSEER_STATE_DIR=str(base / "state"), CODEX_HOME=str(base / "operator-home"))
     Path(env["CODEX_HOME"]).mkdir()
     operator_config = Path(env["CODEX_HOME"]) / "config.toml"
     operator_config.write_text('# Operator config must remain unchanged.\n')
