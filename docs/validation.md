@@ -79,6 +79,10 @@ Checked on 2026-10-21 with the harness versions listed above. These checks used
 the bridge through its own native tools. They do not test every cloud provider
 or login configuration.
 
+Pi/OMP used explicit [Qwen reasoning-format metadata](local-backend.md#pi-direct-compatible-provider)
+in their private model definitions. The checks kept the existing model service
+and normal operator configuration unchanged.
+
 | Operator CLI | Worker CLI | Final fixture tests | Operator turns |
 | --- | --- | --- | --- |
 | Pi | OMP | 9 passed | 1 |

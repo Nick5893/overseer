@@ -29,6 +29,27 @@ remain executable code and should be trusted. See the official
 Pi workers require explicit full-access project permissions. They use the direct
 provider protocol and do not require `overseer-adapter` or `overseer-catalog`.
 
+For Qwen servers that accept `chat_template_kwargs.enable_thinking`, declare the
+model's reasoning capability and request format in your private Pi/OMP model
+entry. The live orchestration checks used these fields:
+
+```json
+{
+  "id": "local-worker",
+  "reasoning": true,
+  "compat": {
+    "thinkingFormat": "qwen-chat-template",
+    "supportsReasoningEffort": false
+  }
+}
+```
+
+Use your server's actual model ID and retain its context/output limits. This
+lets the harness map the worker's `--thinking off` setting to that Qwen request
+format. A `reasoning: false` model entry alone does not switch off a server's
+default reasoning. Register the custom file with `--models`; the generic
+`--base-url` setup does not infer model-specific compatibility fields.
+
 ## What the Codex endpoint must support
 
 The worker harness speaks the Responses API over HTTP/SSE. The local serving
