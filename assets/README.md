@@ -6,3 +6,7 @@ The project uses the supplied Vault Boy image, unchanged.
 
 `overseer.jpg` is the downloaded JPEG, displayed in the repository README and
 project skill metadata.
+
+This third-party artwork is excluded from the project's MIT license. Rights
+remain with the respective copyright holders; the software license grants no
+rights to the artwork.

@@ -370,4 +370,7 @@ for the live model smoke test and [contributing](CONTRIBUTING.md) for developmen
 - [Codex app-server protocol](https://learn.chatgpt.com/docs/app-server)
 - [Pi RPC protocol](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/rpc.md)
 
-Logo: supplied [Vault Boy artwork](assets/README.md).
+## License
+
+The code and documentation are licensed under the [MIT License](LICENSE).
+The third-party [Vault Boy artwork](assets/README.md) is excluded from that license.
